@@ -1,1 +1,11 @@
-# repo-template
+
+  # wiki game
+
+  This is a code bundle for wiki game. The original project is available at https://www.figma.com/design/r4L83vhrTTWxcwhBTDkaLP/wiki-game.
+
+  ## Running the code
+
+  Run `npm i` to install the dependencies.
+
+  Run `npm run dev` to start the development server.
+  
