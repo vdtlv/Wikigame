@@ -199,22 +199,10 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
             >
               <div className="box-border content-stretch flex gap-[8px] items-center justify-center overflow-clip p-[12px] lg:p-[12px] relative rounded-[inherit]">
                 {/* Mobile: Flag icon only */}
-                <div className="relative shrink-0 size-[24px] lg:hidden">
-                  {language === 'ru' ? (
-                    <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 24 24">
-                      <g>
-                        <path d="M21 4H3C2.44772 4 2 4.44772 2 5V7H22V5C22 4.44772 21.5523 4 21 4Z" fill="#EEEEEE" />
-                        <path d="M22 9H2V15H22V9Z" fill="#22408C" />
-                        <path d="M2 17H22V19C22 19.5523 21.5523 20 21 20H3C2.44772 20 2 19.5523 2 19V17Z" fill="#CE2028" />
-                      </g>
-                    </svg>
-                  ) : (
-                    <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 24 24">
-                      <rect width="24" height="24" rx="2" fill="#B22234"/>
-                      <path d="M2 5.5H22M2 8.5H22M2 11.5H22M2 14.5H22M2 17.5H22M2 20.5H22" stroke="white" strokeWidth="1.5"/>
-                      <rect width="10" height="10" x="2" y="4" fill="#3C3B6E"/>
-                    </svg>
-                  )}
+                <div className="relative shrink-0 size-[24px] lg:hidden flex items-center justify-center">
+                  <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-white text-[12px]">
+                    {language === 'ru' ? 'RU' : 'EN'}
+                  </span>
                 </div>
                 {/* Desktop: Text */}
                 <p className="hidden lg:block font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[16px] text-nowrap text-white whitespace-pre">
