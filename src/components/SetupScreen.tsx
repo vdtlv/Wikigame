@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import svgPaths from '../imports/svg-pvsnj56irt';
+import svgPathsNew from '../imports/svg-lrf4eee7ov';
+import Logo from './Logo';
 import { Language } from '../App';
 import { getTranslation, POPULAR_ARTICLES, RECOMMENDED_PROMPTS } from '../translations';
 
@@ -32,6 +34,11 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
   const [showStartDropdown, setShowStartDropdown] = useState(false);
   const [showEndDropdown, setShowEndDropdown] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  
+  // Validation state
+  const [isStartValid, setIsStartValid] = useState(true);
+  const [isEndValid, setIsEndValid] = useState(true);
+  const [isValidating, setIsValidating] = useState(false);
   
   const startInputRef = useRef<HTMLInputElement>(null);
   const endInputRef = useRef<HTMLInputElement>(null);
@@ -67,14 +74,110 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
     }
   };
   
+  // Validate if article exists on Wikipedia
+  const validateArticle = async (articleName: string): Promise<boolean> => {
+    if (!articleName) return false;
+    
+    const wikiDomain = language === 'ru' ? 'ru.wikipedia.org' : 'en.wikipedia.org';
+    
+    try {
+      const response = await fetch(
+        `https://${wikiDomain}/w/api.php?action=parse&page=${encodeURIComponent(articleName)}&format=json&origin=*&prop=text`
+      );
+      const data = await response.json();
+      
+      // If there's an error, the article doesn't exist
+      if (data.error) {
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Article validation error:', error);
+      return false;
+    }
+  };
+  
+  // Check if article is a redirect and get the actual article
+  const checkRedirect = async (articleName: string): Promise<{ isRedirect: boolean; target?: string }> => {
+    if (!articleName) return { isRedirect: false };
+    
+    const wikiDomain = language === 'ru' ? 'ru.wikipedia.org' : 'en.wikipedia.org';
+    
+    try {
+      const response = await fetch(
+        `https://${wikiDomain}/w/api.php?action=query&titles=${encodeURIComponent(articleName)}&format=json&origin=*&redirects=1`
+      );
+      const data = await response.json();
+      
+      // Check if there were redirects
+      if (data.query && data.query.redirects && data.query.redirects.length > 0) {
+        return { 
+          isRedirect: true, 
+          target: data.query.redirects[0].to 
+        };
+      }
+      
+      return { isRedirect: false };
+    } catch (error) {
+      console.error('Redirect check error:', error);
+      return { isRedirect: false };
+    }
+  };
+  
+  // Validate start article when it changes
+  useEffect(() => {
+    const timeoutId = setTimeout(async () => {
+      if (startArticle && startArticle === startInputValue) {
+        setIsValidating(true);
+        const isValid = await validateArticle(startArticle);
+        setIsStartValid(isValid);
+        setIsValidating(false);
+      }
+    }, 500);
+    
+    return () => clearTimeout(timeoutId);
+  }, [startArticle, startInputValue, language]);
+  
+  // Validate end article when it changes
+  useEffect(() => {
+    const timeoutId = setTimeout(async () => {
+      if (endArticle && endArticle === endInputValue) {
+        setIsValidating(true);
+        const isValid = await validateArticle(endArticle);
+        setIsEndValid(isValid);
+        setIsValidating(false);
+      }
+    }, 500);
+    
+    return () => clearTimeout(timeoutId);
+  }, [endArticle, endInputValue, language]);
+  
   // Debounced search for start article
   useEffect(() => {
     const timeoutId = setTimeout(async () => {
       if (startInputValue && startInputValue !== startArticle) {
         setIsSearching(true);
         const results = await searchWikipedia(startInputValue);
-        setStartSuggestions(results);
-        setShowStartDropdown(results.length > 0);
+        
+        // Filter out redirects and invalid articles
+        const validatedResults = await Promise.all(
+          results.map(async (result) => {
+            const redirectInfo = await checkRedirect(result);
+            // Only include non-redirect articles
+            if (redirectInfo.isRedirect) {
+              return null;
+            }
+            const isValid = await validateArticle(result);
+            return isValid ? result : null;
+          })
+        );
+        
+        // Filter out null values (invalid articles and redirects)
+        const validResults = validatedResults.filter((result): result is string => result !== null);
+        
+        setStartSuggestions(validResults);
+        setShowStartDropdown(validResults.length > 0);
         setIsSearching(false);
       }
     }, 300);
@@ -88,8 +191,25 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
       if (endInputValue && endInputValue !== endArticle) {
         setIsSearching(true);
         const results = await searchWikipedia(endInputValue);
-        setEndSuggestions(results);
-        setShowEndDropdown(results.length > 0);
+        
+        // Filter out redirects and invalid articles
+        const validatedResults = await Promise.all(
+          results.map(async (result) => {
+            const redirectInfo = await checkRedirect(result);
+            // Only include non-redirect articles
+            if (redirectInfo.isRedirect) {
+              return null;
+            }
+            const isValid = await validateArticle(result);
+            return isValid ? result : null;
+          })
+        );
+        
+        // Filter out null values (invalid articles and redirects)
+        const validResults = validatedResults.filter((result): result is string => result !== null);
+        
+        setEndSuggestions(validResults);
+        setShowEndDropdown(validResults.length > 0);
         setIsSearching(false);
       }
     }, 300);
@@ -160,24 +280,41 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
     <div className="bg-[rgb(0,0,0)] content-stretch flex flex-col items-center relative size-full">
       {/* Footer (Header in this design) */}
       <div className="bg-black h-[56px] lg:h-[86px] relative shrink-0 w-full">
-        {/* Logo */}
-        <div className="absolute h-[40px] left-1/2 overflow-clip top-1/2 translate-x-[-50%] translate-y-[-50%] w-[80px]">
-          <div className="absolute h-[42.563px] left-[2.68px] top-[-4.9px] w-[66.945px]">
-            <div className="absolute bottom-[-2.49%] left-0 right-[-3.31%] top-0">
-              <svg className="block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 70 44">
-                <g>
-                  <path d={svgPaths.p3685ad90} fill="#F5F5F5" />
-                  <path d={svgPaths.p80a0e90} fill="#F5F5F5" />
-                  <path d={svgPaths.p1cc32dc0} fill="#F5F5F5" />
-                </g>
-              </svg>
-            </div>
+        {/* Logo - Mobile: Left, Desktop: Left */}
+        <div className="absolute h-[40px] left-[16px] lg:left-[48px] overflow-clip top-1/2 translate-y-[-50%] w-[80px]">
+          <Logo />
+        </div>
+
+        {/* Tab Buttons - Desktop Only Center */}
+        <div className="hidden lg:flex absolute box-border content-stretch gap-[16px] items-center left-[calc(50%-0.5px)] px-[12px] py-0 top-[23px] translate-x-[-50%]">
+          <div className="bg-[#303030] box-border content-stretch flex gap-[8px] items-center justify-center overflow-clip p-[12px] relative rounded-[8px] shrink-0">
+            <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[16px] text-nowrap text-white whitespace-pre">{getTranslation(language, 'quickPlay')}</p>
+          </div>
+          <div className="box-border content-stretch flex gap-[2px] items-center justify-center p-[12px] relative w-full">
+            <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[#b3b3b3] text-[16px] text-nowrap whitespace-pre">{language === 'ru' ? 'Мультиплеер' : 'Multiplayer'}</p>
+            <svg className="size-4 shrink-0" fill="none" viewBox="0 0 16 16">
+              <path d="M11.333 7.333H4.667C4.298 7.333 4 7.631 4 8v5.333c0 .369.298.667.667.667h6.666c.369 0 .667-.298.667-.667V8c0-.369-.298-.667-.667-.667z" stroke="#B3B3B3" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"/>
+              <path d="M5.333 7.333V4.667c0-.707.281-1.386.781-1.886.5-.5 1.179-.781 1.886-.781.707 0 1.386.281 1.886.781.5.5.781 1.179.781 1.886v2.666" stroke="#B3B3B3" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"/>
+            </svg>
           </div>
         </div>
 
-        {/* Login Button */}
+        {/* Language Button - Mobile & Desktop: Right */}
         <div className="absolute content-stretch flex gap-[16px] items-center right-[16px] lg:right-[48px] top-1/2 translate-y-[-50%] z-[1001]">
-          <div className="bg-neutral-100 relative rounded-[8px] shrink-0 opacity-50 cursor-not-allowed group">
+          {/* Language Selector */}
+          <button
+            onClick={() => onLanguageChange(language === 'en' ? 'ru' : 'en')}
+            className="bg-[#303030] relative rounded-[8px] shrink-0 hover:bg-[#404040] transition-colors cursor-pointer"
+          >
+            <div className="box-border content-stretch flex gap-[8px] items-center justify-center overflow-clip p-[12px] relative rounded-[inherit]">
+              <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[#e3e3e3] text-[16px] text-nowrap whitespace-pre">
+                {language === 'ru' ? 'RU' : 'EN'}
+              </p>
+            </div>
+          </button>
+          
+          {/* Login Button - Desktop Only */}
+          <div className="hidden lg:block bg-neutral-100 relative rounded-[8px] shrink-0 opacity-50 cursor-not-allowed group">
             <div className="box-border content-stretch flex gap-[8px] items-center justify-center overflow-clip p-[12px] relative rounded-[inherit]">
               <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[#1e1e1e] text-[16px] text-nowrap whitespace-pre">{getTranslation(language, 'login')}</p>
             </div>
@@ -188,29 +325,30 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Language Selector */}
-        <div className="absolute content-stretch flex gap-[16px] items-center left-[16px] lg:left-[48px] top-1/2 translate-y-[-50%]">
-          <div className="content-stretch flex gap-[8px] items-center relative shrink-0">
-            <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[16px] text-[rgba(255,255,255,0.7)] text-nowrap whitespace-pre hidden lg:block">{getTranslation(language, 'language')}</p>
-            <button
-              onClick={() => onLanguageChange(language === 'en' ? 'ru' : 'en')}
-              className="bg-[#303030] relative rounded-[8px] shrink-0 hover:bg-[#404040] transition-colors cursor-pointer"
-            >
-              <div className="box-border content-stretch flex gap-[8px] items-center justify-center overflow-clip p-[12px] lg:p-[12px] relative rounded-[inherit]">
-                {/* Mobile: Flag icon only */}
-                <div className="relative shrink-0 size-[24px] lg:hidden flex items-center justify-center">
-                  <span className="font-['Inter:Semi_Bold',sans-serif] font-semibold text-white text-[12px]">
-                    {language === 'ru' ? 'RU' : 'EN'}
-                  </span>
+      {/* Button Group - Mobile Only */}
+      <div className="lg:hidden bg-black relative shrink-0 w-full">
+        <div className="flex flex-row items-center size-full">
+          <div className="box-border content-stretch flex gap-[4px] items-center px-[12px] py-[8px] relative w-full">
+            <div className="basis-0 bg-[#303030] grow min-h-px min-w-px relative rounded-[8px] shrink-0">
+              <div className="flex flex-row items-center justify-center overflow-clip rounded-[inherit] size-full">
+                <div className="box-border content-stretch flex gap-[8px] items-center justify-center p-[12px] relative w-full">
+                  <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[16px] text-nowrap text-white whitespace-pre">{getTranslation(language, 'quickPlay')}</p>
                 </div>
-                {/* Desktop: Text */}
-                <p className="hidden lg:block font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[16px] text-nowrap text-white whitespace-pre">
-                  {language === 'en' ? getTranslation(language, 'languageEnglish') : getTranslation(language, 'languageRussian')}
-                </p>
               </div>
-              <div aria-hidden="true" className="absolute border border-[#949494] border-solid inset-0 pointer-events-none rounded-[8px]" />
-            </button>
+            </div>
+            <div className="basis-0 grow min-h-px min-w-px relative rounded-[8px] shrink-0 opacity-50 cursor-not-allowed">
+              <div className="flex flex-row items-center justify-center overflow-clip rounded-[inherit] size-full">
+                <div className="box-border content-stretch flex gap-[2px] items-center justify-center p-[12px] relative w-full">
+                  <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[#b3b3b3] text-[16px] text-nowrap whitespace-pre">{language === 'ru' ? 'Мультиплеер' : 'Multiplayer'}</p>
+                  <svg className="size-4 shrink-0" fill="none" viewBox="0 0 16 16">
+                    <path d="M11.333 7.333H4.667C4.298 7.333 4 7.631 4 8v5.333c0 .369.298.667.667.667h6.666c.369 0 .667-.298.667-.667V8c0-.369-.298-.667-.667-.667z" stroke="#B3B3B3" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"/>
+                    <path d="M5.333 7.333V4.667c0-.707.281-1.386.781-1.886.5-.5 1.179-.781 1.886-.781.707 0 1.386.281 1.886.781.5.5.781 1.179.781 1.886v2.666" stroke="#B3B3B3" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"/>
+                  </svg>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -218,9 +356,9 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
       {/* Main Content */}
       <div className="bg-black relative w-full">
         <div className="flex flex-row items-center justify-center size-full">
-          <div className="box-border content-stretch flex flex-col lg:flex-row gap-[10px] lg:gap-[48px] items-center lg:items-start justify-center px-[16px] lg:px-[48px] py-[48px] lg:py-[16px] relative w-full max-w-[1400px]">
+          <div className="box-border content-stretch flex flex-col lg:flex-row gap-[10px] lg:gap-[32px] items-start justify-center px-[16px] lg:px-[48px] py-[48px] lg:py-[16px] relative w-full">
             {/* Quick Play Container */}
-            <div className="content-stretch flex flex-col gap-[24px] items-center lg:items-start relative shrink-0 w-full max-w-[328px] lg:max-w-none lg:w-1/2 mx-[0px] my-[32px]">
+            <div className="basis-0 lg:grow content-stretch flex flex-col gap-[24px] items-center lg:items-start relative shrink-0 w-full lg:min-w-0">
               <div className="content-stretch flex flex-col gap-[8px] items-center lg:items-start not-italic relative shrink-0 w-full text-center lg:text-left">
                 <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[1.2] relative shrink-0 text-[24px] text-white tracking-[-0.48px] w-full">{getTranslation(language, 'quickPlay')}</p>
                 <div className="flex flex-col font-['Inter:Regular',sans-serif] font-normal justify-center leading-[0] relative shrink-0 text-[16px] text-[rgba(255,255,255,0.7)] w-full">
@@ -233,7 +371,7 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
                 {/* Start Article */}
                 <div className="relative w-full lg:w-[220px]">
                   <div className="bg-[#1e1e1e] h-[40px] min-w-[120px] relative rounded-[8px] shrink-0 w-full">
-                    <div aria-hidden="true" className="absolute border border-[#444444] border-solid inset-[-0.5px] pointer-events-none rounded-[8.5px] z-0" />
+                    <div aria-hidden="true" className={`absolute border ${!isStartValid && startArticle ? 'border-[#dc2626]' : 'border-[#444444]'} border-solid inset-[-0.5px] pointer-events-none rounded-[8.5px] z-0`} />
                     <div className="flex flex-row items-center min-w-inherit size-full">
                       <div className="box-border content-stretch flex gap-[8px] h-[40px] items-center min-w-inherit pl-[16px] pr-[12px] py-[12px] relative w-full">
                         <input
@@ -265,6 +403,13 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
                       </div>
                     </div>
                   </div>
+                  
+                  {/* Validation Error Message */}
+                  {!isStartValid && startArticle && (
+                    <p className="text-[#dc2626] text-[12px] mt-1 font-['Inter:Regular',sans-serif]">
+                      {language === 'ru' ? 'Статья не найдена' : 'Article not found'}
+                    </p>
+                  )}
                   
                   {/* Start Dropdown */}
                   {showStartDropdown && startSuggestions.length > 0 && (
@@ -311,7 +456,7 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
                 {/* End Article */}
                 <div className="relative w-full lg:w-[220px]">
                   <div className="bg-[#1e1e1e] h-[40px] min-w-[120px] relative rounded-[8px] shrink-0 w-full">
-                    <div aria-hidden="true" className="absolute border border-[#444444] border-solid inset-[-0.5px] pointer-events-none rounded-[8.5px] z-0" />
+                    <div aria-hidden="true" className={`absolute border ${!isEndValid && endArticle ? 'border-[#dc2626]' : 'border-[#444444]'} border-solid inset-[-0.5px] pointer-events-none rounded-[8.5px] z-0`} />
                     <div className="flex flex-row items-center min-w-inherit size-full">
                       <div className="box-border content-stretch flex gap-[8px] h-[40px] items-center min-w-inherit pl-[16px] pr-[12px] py-[12px] relative w-full">
                         <input
@@ -343,6 +488,13 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
                       </div>
                     </div>
                   </div>
+                  
+                  {/* Validation Error Message */}
+                  {!isEndValid && endArticle && (
+                    <p className="text-[#dc2626] text-[12px] mt-1 font-['Inter:Regular',sans-serif]">
+                      {language === 'ru' ? 'Статья не найдена' : 'Article not found'}
+                    </p>
+                  )}
                   
                   {/* End Dropdown */}
                   {showEndDropdown && endSuggestions.length > 0 && (
@@ -388,7 +540,7 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
               {/* Launch Button */}
               <button 
                 onClick={handleLaunchGame}
-                disabled={!startArticle || !endArticle}
+                disabled={!startArticle || !endArticle || !isStartValid || !isEndValid}
                 className="bg-neutral-100 relative rounded-[8px] shrink-0 w-full hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <div className="box-border content-stretch flex gap-[8px] items-center justify-center overflow-clip p-[12px] lg:px-[32px] lg:py-[16px] relative rounded-[inherit]">
@@ -399,7 +551,7 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange }:
             </div>
 
             {/* Recommended Prompts Container */}
-            <div className="content-stretch flex flex-col gap-[24px] items-center lg:items-start relative shrink-0 w-full max-w-[328px] lg:max-w-none lg:w-auto">
+            <div className="basis-0 lg:grow content-stretch flex flex-col gap-[24px] items-center lg:items-start relative shrink-0 w-full lg:min-w-0">
               <div className="content-stretch flex flex-col gap-[8px] items-center lg:items-start not-italic relative shrink-0 w-full text-center lg:text-left">
                 <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[1.2] relative shrink-0 text-[24px] text-white tracking-[-0.48px] w-full">{getTranslation(language, 'recommendedPrompts')}</p>
                 <div className="flex flex-col font-['Inter:Regular',sans-serif] font-normal justify-center leading-[0] relative shrink-0 text-[16px] text-[rgba(255,255,255,0.7)] w-full">
