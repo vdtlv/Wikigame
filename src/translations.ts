@@ -47,8 +47,8 @@ export const translations = {
     quickPlay: 'Быстрая игра',
     quickPlayDescription: 'Интересно, что может связывать философию и Чака Норриса? Прекратите гадать и узнайте сами!',
     startArticlePlaceholder: 'Начальная статья',
-    endArticlePlaceholder: 'Конечная статья',
-    swapArticles: 'Поменять статьи',
+    endArticlePlaceholder: 'Цель',
+    swapArticles: 'Поменять местами',
     launchGame: 'Начать игру',
     launch: 'Начать',
     recommendedPrompts: 'Рекомендуемые задания',
@@ -56,19 +56,19 @@ export const translations = {
     
     // Game Screen
     goal: 'Цель',
-    linksClicked: 'Переходов',
+    linksClicked: 'Кликов',
     clicks: 'Кликов',
     timeElapsed: 'Время',
     currentPage: 'Текущая страница',
-    giveUp: 'Сдаться',
-    leave: 'Вернуться',
-    loading: 'Загрузка...',
+    giveUp: 'Сдаюсь',
+    leave: 'Назад',
+    loading: 'Подождите немного...',
     
     // Win Screen
     congratulations: 'Поздравляем!',
     youReached: 'Вы добрались до',
     from: 'из',
-    playAgain: 'Играть еще раз',
+    playAgain: 'Хочу еще раз',
     youWon: 'Вы выиграли!',
     
     // Language names

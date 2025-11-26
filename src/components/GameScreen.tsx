@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Language } from '../App';
+import { Language, User } from '../App';
 import { getTranslation } from '../translations';
 import LaunchScreen from './LaunchScreen';
 import WinScreen from './WinScreen';
+import { projectId, publicAnonKey } from '../utils/supabase/info';
 
 interface GameScreenProps {
   startArticle: string;
@@ -10,9 +11,11 @@ interface GameScreenProps {
   onWin: () => void;
   onGiveUp: () => void;
   language: Language;
+  partyUid?: string | null;
+  user?: User | null;
 }
 
-export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, language }: GameScreenProps) {
+export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, language, partyUid, user }: GameScreenProps) {
   const [currentPage, setCurrentPage] = useState(startArticle);
   const [linksClicked, setLinksClicked] = useState(0);
   const [timeElapsed, setTimeElapsed] = useState(0);
@@ -217,7 +220,7 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
 
   // Handle link clicks in iframe
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
+    const handleMessage = async (event: MessageEvent) => {
       if (event.data && event.data.type === 'wikipediaLinkClick') {
         const articleName = event.data.articleName;
         
@@ -254,6 +257,42 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
         // Check if goal reached
         if (articleName.toLowerCase() === endArticle.toLowerCase()) {
           console.log('🎉 Goal reached!');
+          
+          // Save result to party if this is a multiplayer game
+          if (partyUid && user) {
+            const finalPath = [...navigationPath, articleName];
+            const totalMs = Date.now() - startTimeRef.current;
+            
+            console.log('💾 Saving multiplayer game result to party:', partyUid);
+            
+            try {
+              const response = await fetch(
+                `https://${projectId}.supabase.co/functions/v1/make-server-92321c2f/party/${partyUid}/result`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${publicAnonKey}`,
+                  },
+                  body: JSON.stringify({
+                    userId: user.id,
+                    clicks: visitCounterRef.current,
+                    timeElapsed: totalMs,
+                    path: finalPath,
+                  }),
+                }
+              );
+
+              if (response.ok) {
+                console.log('✅ Game result saved to party');
+              } else {
+                console.error('❌ Failed to save game result:', await response.text());
+              }
+            } catch (error) {
+              console.error('❌ Error saving game result:', error);
+            }
+          }
+          
           setShowWinDialog(true);
         }
       }
@@ -264,7 +303,7 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [currentPage, endArticle, language, onWin]);
+  }, [currentPage, endArticle, language, onWin, navigationPath, partyUid, user]);
 
   // Timer effect
   useEffect(() => {
