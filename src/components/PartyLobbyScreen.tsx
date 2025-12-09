@@ -12,7 +12,8 @@ interface PartyLobbyScreenProps {
   accessCode: string;
   onLanguageChange: (lang: Language) => void;
   onBack: () => void;
-  onLaunchGame: (start: string, end: string) => void;
+  onHostReady: (start: string, end: string) => void;
+  onPlayerReady: () => void;
   onLeave: () => void;
 }
 
@@ -40,7 +41,8 @@ export default function PartyLobbyScreen({
   accessCode,
   onLanguageChange,
   onBack,
-  onLaunchGame,
+  onHostReady,
+  onPlayerReady,
   onLeave,
 }: PartyLobbyScreenProps) {
   const [members, setMembers] = useState<PartyMember[]>([]);
@@ -370,14 +372,15 @@ export default function PartyLobbyScreen({
       // TODO: Update party with selected articles and launch game
       setIsReady(true);
       
-      // Call onLaunchGame with the articles
+      // Call onHostReady with the articles
       // This should trigger the game to start
       
-      onLaunchGame(startArticle, endArticle);
+      onHostReady(startArticle, endArticle);
     } else {
       // Player is ready
       setIsReady(true);
       // TODO: Notify server that player is ready
+      onPlayerReady();
     }
   };
 

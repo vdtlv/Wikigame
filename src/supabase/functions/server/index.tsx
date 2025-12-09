@@ -426,7 +426,7 @@ app.post("/make-server-92321c2f/send-magic-link", async (c) => {
     
     console.log('📧 Generating magic link for:', email);
     
-    // Generate magic link with our redirect URL
+    // Generate magic link with custom auth subdomain
     const { data: magicData, error: magicError } = await supabaseAdmin.auth.admin.generateLink({
       type: 'magiclink',
       email: email,
@@ -440,9 +440,19 @@ app.post("/make-server-92321c2f/send-magic-link", async (c) => {
       return c.json({ error: "Failed to generate magic link" }, 500);
     }
 
-    const magicLink = magicData.properties.action_link;
-    console.log('🔗 Magic link generated:', magicLink);
-    console.log('🔍 Magic link domain:', new URL(magicLink).hostname);
+    const originalMagicLink = magicData.properties.action_link;
+    
+    // Replace Supabase domain with custom auth subdomain
+    const supabaseUrlObj = new URL(Deno.env.get('SUPABASE_URL') || '');
+    const customMagicLink = originalMagicLink.replace(
+      supabaseUrlObj.hostname,
+      'auth.wikirunner.ru'
+    );
+    
+    console.log('🔗 Original magic link:', originalMagicLink);
+    console.log('🔗 Custom magic link:', customMagicLink);
+    
+    const magicLink = customMagicLink;
     
     // Generate 6-digit verification code
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();

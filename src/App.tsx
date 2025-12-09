@@ -4,9 +4,11 @@ import GameScreen from './components/GameScreen';
 import WinScreen from './components/WinScreen';
 import AuthModal from './components/AuthModal';
 import PartyLobbyScreen from './components/PartyLobbyScreen';
+import HostLaunchScreen from './components/HostLaunchScreen';
+import PlayerLaunchScreen from './components/PlayerLaunchScreen';
 import { supabase, supabaseUrl, supabaseAnonKey } from './utils/supabase/client';
 
-export type GameState = 'setup' | 'playing' | 'won' | 'party-lobby';
+export type GameState = 'setup' | 'playing' | 'won' | 'party-lobby' | 'host-launch' | 'player-waiting';
 export type Language = 'en' | 'ru';
 
 export interface ArticlePair {
@@ -295,9 +297,25 @@ export default function App() {
     setGameState('party-lobby');
   };
   
-  const handleLaunchPartyGame = (start: string, end: string) => {
-    if (currentPartyUid) {
-      handleStartGame(start, end, currentPartyUid);
+  const handleHostReady = (start: string, end: string) => {
+    setArticles({ start, end });
+    setGameState('host-launch');
+  };
+  
+  const handlePlayerReady = () => {
+    setGameState('player-waiting');
+  };
+  
+  const handleBackToPartyLobby = () => {
+    setGameState('party-lobby');
+  };
+
+  const handleLaunchPartyGame = () => {
+    if (isMultiplayerGame && currentPartyUid) {
+      // Go back to party lobby
+      setGameState('party-lobby');
+    } else {
+      setGameState('setup');
     }
   };
 
@@ -345,7 +363,8 @@ export default function App() {
               accessCode={currentAccessCode}
               onLanguageChange={setLanguage}
               onBack={handleBackToSetup}
-              onLaunchGame={handleLaunchPartyGame}
+              onHostReady={handleHostReady}
+              onPlayerReady={handlePlayerReady}
               onLeave={handleBackToSetup}
             />
           )}
@@ -355,6 +374,27 @@ export default function App() {
               onClose={() => setShowAuthModal(false)}
               language={language}
               initialStep={authModalStep}
+            />
+          )}
+          {gameState === 'host-launch' && currentPartyUid && user && (
+            <HostLaunchScreen
+              language={language}
+              user={user}
+              partyUid={currentPartyUid}
+              accessCode={currentAccessCode}
+              startArticle={articles.start}
+              endArticle={articles.end}
+              onLaunch={() => handleStartGame(articles.start, articles.end, currentPartyUid)}
+              onBack={handleBackToPartyLobby}
+            />
+          )}
+          {gameState === 'player-waiting' && currentPartyUid && user && (
+            <PlayerLaunchScreen
+              language={language}
+              user={user}
+              partyUid={currentPartyUid}
+              onStartGame={(start, end) => handleStartGame(start, end, currentPartyUid)}
+              onBack={handleBackToPartyLobby}
             />
           )}
         </>
