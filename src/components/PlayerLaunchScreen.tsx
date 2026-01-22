@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Language, User } from '../App';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 
@@ -20,6 +20,7 @@ export default function PlayerLaunchScreen({
   const [memberCount, setMemberCount] = useState(1);
   const [startArticle, setStartArticle] = useState('');
   const [endArticle, setEndArticle] = useState('');
+  const hasStartedRef = useRef(false);
 
   // Poll for party updates to detect when game starts
   useEffect(() => {
@@ -36,13 +37,17 @@ export default function PlayerLaunchScreen({
 
         if (response.ok) {
           const party = await response.json();
+          console.log('🎮 Player waiting - Party status:', party.status, 'Start:', party.startArticle, 'End:', party.endArticle);
+          
           setMemberCount(party.members.length);
           
           if (party.startArticle) setStartArticle(party.startArticle);
           if (party.endArticle) setEndArticle(party.endArticle);
           
           // Check if host started the game
-          if (party.status === 'in_progress' && party.startArticle && party.endArticle) {
+          if (party.status === 'in_progress' && party.startArticle && party.endArticle && !hasStartedRef.current) {
+            console.log('🚀 Game started! Navigating to game screen...');
+            hasStartedRef.current = true;
             onGameStarted(party.startArticle, party.endArticle);
           }
         }

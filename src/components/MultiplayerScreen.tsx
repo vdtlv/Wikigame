@@ -60,55 +60,95 @@ export default function MultiplayerScreen({
       setUserLobbies([]);
       setLobbyMembers({});
     }
-  }, [user]);
+  }, [user?.id]); // Changed from [user] to [user?.id] to prevent infinite loop
 
   const fetchUserLobbies = async () => {
     if (!user) return;
 
     setIsLoadingLobbies(true);
     try {
+      console.log('🔄 Fetching user lobbies for:', user.id);
+      
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-92321c2f/user/${user.id}/parties`,
         {
           headers: {
             'Authorization': `Bearer ${publicAnonKey}`,
           },
+          signal: controller.signal,
         }
       );
+      
+      clearTimeout(timeoutId);
+      console.log('📡 Response status:', response.status);
 
-      if (response.ok) {
-        const parties = await response.json();
-        setUserLobbies(parties);
-        
-        // Fetch member nicknames for each party
-        const membersData: { [key: string]: MemberProfile[] } = {};
-        for (const party of parties) {
+      if (!response.ok) {
+        console.error('❌ Failed to fetch user lobbies:', response.status);
+        setIsLoadingLobbies(false);
+        return;
+      }
+
+      const parties = await response.json();
+      console.log('✅ Fetched parties:', parties.length);
+      setUserLobbies(parties);
+      
+      // Fetch member nicknames for each party
+      const membersData: { [key: string]: MemberProfile[] } = {};
+      for (const party of parties) {
+        console.log('🔄 Fetching members for party:', party.partyUid);
+        try {
           const memberProfiles = await Promise.all(
             party.members.map(async (userId: string) => {
-              const profileResponse = await fetch(
-                `https://${projectId}.supabase.co/functions/v1/make-server-92321c2f/user-profile/${userId}`,
-                {
-                  headers: {
-                    'Authorization': `Bearer ${publicAnonKey}`,
-                  },
+              try {
+                const profileController = new AbortController();
+                const profileTimeoutId = setTimeout(() => profileController.abort(), 5000); // 5 second timeout per profile
+                
+                const profileResponse = await fetch(
+                  `https://${projectId}.supabase.co/functions/v1/make-server-92321c2f/user-profile/${userId}`,
+                  {
+                    headers: {
+                      'Authorization': `Bearer ${publicAnonKey}`,
+                    },
+                    signal: profileController.signal,
+                  }
+                );
+                
+                clearTimeout(profileTimeoutId);
+                
+                if (profileResponse.ok) {
+                  const profile = await profileResponse.json();
+                  return { userId, nickname: profile.nickname };
                 }
-              );
-              
-              if (profileResponse.ok) {
-                const profile = await profileResponse.json();
-                return { userId, nickname: profile.nickname };
+                console.warn('⚠️ Profile not found for user:', userId);
+                return { userId, nickname: 'Unknown' };
+              } catch (error) {
+                console.error('❌ Error fetching profile for user:', userId, error);
+                return { userId, nickname: 'Unknown' };
               }
-              return { userId, nickname: 'Unknown' };
             })
           );
           membersData[party.partyUid] = memberProfiles;
+          console.log('✅ Fetched members for party:', party.partyUid, memberProfiles.length);
+        } catch (error) {
+          console.error('❌ Error fetching members for party:', party.partyUid, error);
+          membersData[party.partyUid] = [];
         }
-        setLobbyMembers(membersData);
       }
+      setLobbyMembers(membersData);
+      console.log('✅ All lobby data fetched successfully');
     } catch (error) {
-      console.error('Error fetching user lobbies:', error);
+      console.error('❌ Error fetching user lobbies:', error);
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error('❌ Request timed out');
+        setError(language === 'ru' ? 'Время ожидания истекло' : 'Request timed out');
+      }
     } finally {
       setIsLoadingLobbies(false);
+      console.log('🏁 Loading complete');
     }
   };
 
@@ -356,7 +396,7 @@ export default function MultiplayerScreen({
                       </div>
                       <button
                         onClick={handleJoinParty}
-                        disabled={isJoining || !user || joinCode.length !== 6}
+                        disabled={isJoining || joinCode.length !== 6}
                         className="bg-[#383838] relative rounded-[8px] shrink-0 h-[40px] disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <div className="box-border content-stretch flex gap-[8px] items-center justify-center overflow-clip px-[12px] py-[8px] relative rounded-[inherit] h-full">

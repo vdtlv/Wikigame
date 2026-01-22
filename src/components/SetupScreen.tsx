@@ -20,6 +20,10 @@ interface SetupScreenProps {
   onShowAuth: () => void;
   onShowNickname?: () => void;
   onLogout: () => void;
+  onJoinPartyLobby?: (partyUid: string, accessCode: string) => void;
+  initialView?: 'quickplay' | 'multiplayer';
+  onNavigateToMultiplayer?: () => void;
+  onNavigateToHome?: () => void;
 }
 
 interface Prompt {
@@ -46,13 +50,13 @@ function getRandomArticle(language: Language): string {
   return articles[Math.floor(Math.random() * articles.length)];
 }
 
-export default function SetupScreen({ onStartGame, language, onLanguageChange, user, onShowAuth, onShowNickname, onLogout }: SetupScreenProps) {
+export default function SetupScreen({ onStartGame, language, onLanguageChange, user, onShowAuth, onShowNickname, onLogout, onJoinPartyLobby, initialView, onNavigateToMultiplayer, onNavigateToHome }: SetupScreenProps) {
   const [startArticle, setStartArticle] = useState('');
   const [endArticle, setEndArticle] = useState('');
   const [prompts, setPrompts] = useState<Prompt[]>(RECOMMENDED_PROMPTS[language]);
   
   // View state
-  const [currentView, setCurrentView] = useState<'quickplay' | 'multiplayer'>('quickplay');
+  const [currentView, setCurrentView] = useState<'quickplay' | 'multiplayer'>(initialView || 'quickplay');
   
   // Multiplayer state
   const [multiplayerStep, setMultiplayerStep] = useState<MultiplayerStep>('selection');
@@ -428,13 +432,25 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
 
   // Multiplayer handlers
   const handleCreateParty = (party: Party) => {
-    setCurrentParty(party);
-    setMultiplayerStep('host-setup');
+    // Navigate directly to lobby route
+    if (onJoinPartyLobby) {
+      onJoinPartyLobby(party.partyUid, party.accessCode);
+    } else {
+      // Fallback to old behavior
+      setCurrentParty(party);
+      setMultiplayerStep('host-setup');
+    }
   };
 
   const handleJoinParty = (party: Party) => {
-    setCurrentParty(party);
-    setMultiplayerStep('player-party');
+    // Navigate directly to lobby route
+    if (onJoinPartyLobby) {
+      onJoinPartyLobby(party.partyUid, party.accessCode);
+    } else {
+      // Fallback to old behavior
+      setCurrentParty(party);
+      setMultiplayerStep('player-party');
+    }
   };
 
   const handleHostReady = (start: string, end: string) => {
@@ -605,7 +621,15 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
         onLanguageChange={onLanguageChange}
         onLogout={onLogout}
         currentView={currentView}
-        onViewChange={setCurrentView}
+        onViewChange={(view) => {
+          if (view === 'quickplay' && onNavigateToHome) {
+            onNavigateToHome();
+          } else if (view === 'multiplayer' && onNavigateToMultiplayer) {
+            onNavigateToMultiplayer();
+          } else {
+            setCurrentView(view);
+          }
+        }}
         showTabs={showHeaderTabs}
         showProfileMenu={showProfileMenu}
         setShowProfileMenu={setShowProfileMenu}
@@ -616,7 +640,15 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
       {/* Mobile Button Group */}
       <MobileButtonGroup
         currentView={currentView}
-        onViewChange={setCurrentView}
+        onViewChange={(view) => {
+          if (view === 'quickplay' && onNavigateToHome) {
+            onNavigateToHome();
+          } else if (view === 'multiplayer' && onNavigateToMultiplayer) {
+            onNavigateToMultiplayer();
+          } else {
+            setCurrentView(view);
+          }
+        }}
         language={language}
         showTabs={showHeaderTabs}
       />

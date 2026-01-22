@@ -76,7 +76,7 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
 
   const handleVerifyCode = async () => {
     if (!code || code.length !== 6) {
-      setError(language === 'ru' ? 'Введите 6-значный од' : 'Enter 6-digit code');
+      setError(language === 'ru' ? 'Введите 6-значный код' : 'Enter 6-digit code');
       return;
     }
 
@@ -103,6 +103,21 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
 
       const data = await response.json();
       console.log('✅ Code verified, user ID:', data.userId);
+
+      // Establish Supabase session with the tokens
+      console.log('🔑 Establishing session with tokens...');
+      const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      });
+
+      if (sessionError) {
+        console.error('❌ Error setting session:', sessionError);
+        throw new Error('Failed to establish session');
+      }
+
+      console.log('✅ Session established successfully');
+      console.log('🔑 Session ID:', sessionData.session?.access_token.substring(0, 20) + '...');
 
       // Store userId temporarily for nickname setup
       setTempUserId(data.userId);

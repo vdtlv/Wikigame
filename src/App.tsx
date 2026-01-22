@@ -8,7 +8,6 @@ import HostLaunchScreen from './components/HostLaunchScreen';
 import PlayerLaunchScreen from './components/PlayerLaunchScreen';
 import { supabase, supabaseUrl, supabaseAnonKey } from './utils/supabase/client';
 
-export type GameState = 'setup' | 'playing' | 'won' | 'party-lobby' | 'host-launch' | 'player-waiting';
 export type Language = 'en' | 'ru';
 
 export interface ArticlePair {
@@ -22,19 +21,42 @@ export interface User {
   email?: string;
 }
 
+// Simple router using hash-based navigation
+function useHashRouter() {
+  const [route, setRoute] = useState(() => {
+    const hash = window.location.hash.slice(1) || '/';
+    return hash;
+  });
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.slice(1) || '/';
+      setRoute(hash);
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const navigate = (path: string) => {
+    window.location.hash = path;
+  };
+
+  // Parse route and query params
+  const [pathname, search] = route.split('?');
+  const searchParams = new URLSearchParams(search || '');
+  
+  return { pathname, searchParams, navigate };
+}
+
 export default function App() {
-  const [gameState, setGameState] = useState<GameState>('setup');
-  const [articles, setArticles] = useState<ArticlePair>({ start: '', end: '' });
+  const { pathname, searchParams, navigate } = useHashRouter();
   const [language, setLanguage] = useState<Language>('en');
   const [user, setUser] = useState<User | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalStep, setAuthModalStep] = useState<'email' | 'code' | 'nickname'>('email');
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  
-  // Multiplayer state
-  const [currentPartyUid, setCurrentPartyUid] = useState<string | null>(null);
-  const [currentAccessCode, setCurrentAccessCode] = useState<string>('');
-  const [isMultiplayerGame, setIsMultiplayerGame] = useState(false);
+  const [returnPath, setReturnPath] = useState<string>('/');
 
   // 🔍 CAPTURE URL IMMEDIATELY ON LOAD
   useEffect(() => {
@@ -154,6 +176,13 @@ export default function App() {
               email: session.user.email,
             });
             setShowAuthModal(false);
+            
+            // Navigate back to the return path after successful auth
+            if (returnPath && returnPath !== '/') {
+              console.log('🔄 Returning to:', returnPath);
+              navigate(returnPath);
+              setReturnPath('/');
+            }
           } else {
             console.log('⚠️ User signed in but no nickname set yet');
             console.log('📝 Showing nickname modal for user to complete profile');
@@ -173,13 +202,14 @@ export default function App() {
       } else if (event === 'SIGNED_OUT') {
         console.log('🚪 User signed out');
         setUser(null);
+        navigate('/');
       }
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [navigate, returnPath]);
 
   const checkSession = async () => {
     try {
@@ -232,9 +262,21 @@ export default function App() {
     setShowAuthModal(false);
     // Reset step for next time
     setAuthModalStep('email');
+    
+    // Navigate back to the return path after successful auth
+    if (returnPath && returnPath !== '/') {
+      console.log('🔄 Returning to:', returnPath);
+      navigate(returnPath);
+      setReturnPath('/');
+    }
   };
 
-  const handleShowAuth = () => {
+  const handleShowAuth = (currentPath?: string) => {
+    // Store where the user was when they clicked login
+    if (currentPath) {
+      console.log('💾 Storing return path:', currentPath);
+      setReturnPath(currentPath);
+    }
     setAuthModalStep('email');
     setShowAuthModal(true);
   };
@@ -248,156 +290,214 @@ export default function App() {
     await supabase.auth.signOut();
     setUser(null);
     console.log('🚪 User logged out successfully');
+    navigate('/');
   };
 
-  const handleStartGame = (start: string, end: string, partyUid?: string) => {
-    setArticles({ start, end });
-    if (partyUid) {
-      setCurrentPartyUid(partyUid);
-      setIsMultiplayerGame(true);
-    } else {
-      setCurrentPartyUid(null);
-      setIsMultiplayerGame(false);
+  if (isCheckingAuth) {
+    return (
+      <div className="bg-black size-full flex items-center justify-center">
+        <p className="text-white text-[16px] font-['Inter:Regular',sans-serif]">Loading...</p>
+      </div>
+    );
+  }
+
+  // Route rendering logic
+  const renderRoute = () => {
+    // Extract route params
+    const pathSegments = pathname.split('/').filter(Boolean);
+    
+    // Home route
+    if (pathname === '/' || pathname === '') {
+      return (
+        <SetupScreen 
+          onStartGame={(start, end) => {
+            navigate(`/game?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+          }}
+          language={language}
+          onLanguageChange={setLanguage}
+          user={user}
+          onShowAuth={() => handleShowAuth('/')}
+          onShowNickname={handleShowNickname}
+          onLogout={handleLogout}
+          onJoinPartyLobby={(partyUid, accessCode) => {
+            navigate(`/lobby/${partyUid}?access=${accessCode}`);
+          }}
+          onNavigateToMultiplayer={() => navigate('/multiplayer')}
+        />
+      );
     }
-    setGameState('playing');
-  };
-
-  const handleWin = () => {
-    setGameState('won');
-  };
-
-  const handleGiveUp = () => {
-    if (isMultiplayerGame && currentPartyUid) {
-      // Go back to party lobby
-      setGameState('party-lobby');
-    } else {
-      setGameState('setup');
+    
+    // Multiplayer selection route
+    if (pathname === '/multiplayer') {
+      return (
+        <SetupScreen 
+          onStartGame={(start, end) => {
+            navigate(`/game?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+          }}
+          language={language}
+          onLanguageChange={setLanguage}
+          user={user}
+          onShowAuth={() => handleShowAuth('/multiplayer')}
+          onShowNickname={handleShowNickname}
+          onLogout={handleLogout}
+          onJoinPartyLobby={(partyUid, accessCode) => {
+            navigate(`/lobby/${partyUid}?access=${accessCode}`);
+          }}
+          initialView="multiplayer"
+          onNavigateToHome={() => navigate('/')}
+        />
+      );
     }
-  };
-
-  const handlePlayAgain = () => {
-    if (isMultiplayerGame && currentPartyUid) {
-      // Go back to party lobby
-      setGameState('party-lobby');
-    } else {
-      setGameState('setup');
+    
+    // Game route
+    if (pathname === '/game') {
+      const startArticle = searchParams.get('start') || '';
+      const endArticle = searchParams.get('end') || '';
+      const partyUid = searchParams.get('party') || undefined;
+      
+      return (
+        <GameScreen
+          startArticle={startArticle}
+          endArticle={endArticle}
+          onWin={() => {
+            navigate(`/win?party=${partyUid || ''}`);
+          }}
+          onGiveUp={() => {
+            if (partyUid) {
+              navigate(`/lobby/${partyUid}`);
+            } else {
+              navigate('/');
+            }
+          }}
+          language={language}
+          partyUid={partyUid}
+          user={user}
+        />
+      );
     }
-  };
-
-  const handleBackToSetup = () => {
-    setGameState('setup');
-    setCurrentPartyUid(null);
-    setCurrentAccessCode('');
-    setIsMultiplayerGame(false);
-  };
-
-  const handleJoinPartyLobby = (partyUid: string, accessCode: string) => {
-    setCurrentPartyUid(partyUid);
-    setCurrentAccessCode(accessCode);
-    setGameState('party-lobby');
-  };
-  
-  const handleHostReady = (start: string, end: string) => {
-    setArticles({ start, end });
-    setGameState('host-launch');
-  };
-  
-  const handlePlayerReady = () => {
-    setGameState('player-waiting');
-  };
-  
-  const handleBackToPartyLobby = () => {
-    setGameState('party-lobby');
-  };
-
-  const handleLaunchPartyGame = () => {
-    if (isMultiplayerGame && currentPartyUid) {
-      // Go back to party lobby
-      setGameState('party-lobby');
-    } else {
-      setGameState('setup');
+    
+    // Win route
+    if (pathname === '/win') {
+      const partyUid = searchParams.get('party');
+      return (
+        <WinScreen 
+          onPlayAgain={() => {
+            if (partyUid) {
+              navigate(`/lobby/${partyUid}`);
+            } else {
+              navigate('/');
+            }
+          }}
+          language={language}
+        />
+      );
     }
+    
+    // Lobby route
+    if (pathSegments[0] === 'lobby' && pathSegments[1]) {
+      const partyUid = pathSegments[1];
+      const accessCode = searchParams.get('access') || '';
+      
+      // Redirect to home if no user
+      if (!user) {
+        // Trigger auth modal with return path
+        setTimeout(() => {
+          handleShowAuth(`/lobby/${partyUid}?access=${accessCode}`);
+        }, 0);
+        
+        return (
+          <div className="bg-black size-full flex items-center justify-center">
+            <p className="text-white text-[16px] font-['Inter:Regular',sans-serif]">Please log in...</p>
+          </div>
+        );
+      }
+      
+      return (
+        <PartyLobbyScreen
+          language={language}
+          user={user}
+          partyUid={partyUid}
+          accessCode={accessCode}
+          onLanguageChange={setLanguage}
+          onBack={() => navigate('/')}
+          onHostReady={(start, end) => {
+            navigate(`/host-launch/${partyUid}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&access=${accessCode}`);
+          }}
+          onPlayerReady={() => {
+            navigate(`/player-waiting/${partyUid}?access=${accessCode}`);
+          }}
+          onLeave={() => navigate('/')}
+        />
+      );
+    }
+    
+    // Host launch route
+    if (pathSegments[0] === 'host-launch' && pathSegments[1]) {
+      const partyUid = pathSegments[1];
+      const startArticle = searchParams.get('start') || '';
+      const endArticle = searchParams.get('end') || '';
+      const accessCode = searchParams.get('access') || '';
+      
+      if (!user) {
+        navigate('/');
+        return null;
+      }
+      
+      return (
+        <HostLaunchScreen
+          language={language}
+          user={user}
+          partyUid={partyUid}
+          accessCode={accessCode}
+          startArticle={startArticle}
+          endArticle={endArticle}
+          onLaunch={() => {
+            navigate(`/game?start=${encodeURIComponent(startArticle)}&end=${encodeURIComponent(endArticle)}&party=${partyUid}`);
+          }}
+          onBack={() => navigate(`/lobby/${partyUid}?access=${accessCode}`)}
+        />
+      );
+    }
+    
+    // Player waiting route
+    if (pathSegments[0] === 'player-waiting' && pathSegments[1]) {
+      const partyUid = pathSegments[1];
+      const accessCode = searchParams.get('access') || '';
+      
+      if (!user) {
+        navigate('/');
+        return null;
+      }
+      
+      return (
+        <PlayerLaunchScreen
+          language={language}
+          user={user}
+          partyUid={partyUid}
+          onGameStarted={(start, end) => {
+            navigate(`/game?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&party=${partyUid}`);
+          }}
+          onLeave={() => navigate(`/lobby/${partyUid}?access=${accessCode}`)}
+        />
+      );
+    }
+    
+    // 404 - redirect to home
+    navigate('/');
+    return null;
   };
 
   return (
     <div className="size-full">
-      {isCheckingAuth ? (
-        <div className="bg-black size-full flex items-center justify-center">
-          <p className="text-white text-[16px] font-['Inter:Regular',sans-serif]">Loading...</p>
-        </div>
-      ) : (
-        <>
-          {gameState === 'setup' && (
-            <SetupScreen 
-              onStartGame={handleStartGame} 
-              language={language}
-              onLanguageChange={setLanguage}
-              user={user}
-              onShowAuth={handleShowAuth}
-              onShowNickname={handleShowNickname}
-              onLogout={handleLogout}
-            />
-          )}
-          {gameState === 'playing' && (
-            <GameScreen
-              startArticle={articles.start}
-              endArticle={articles.end}
-              onWin={handleWin}
-              onGiveUp={handleGiveUp}
-              language={language}
-              partyUid={isMultiplayerGame ? currentPartyUid : undefined}
-              user={user}
-            />
-          )}
-          {gameState === 'won' && (
-            <WinScreen 
-              onPlayAgain={handlePlayAgain}
-              language={language}
-            />
-          )}
-          {gameState === 'party-lobby' && currentPartyUid && user && (
-            <PartyLobbyScreen
-              language={language}
-              user={user}
-              partyUid={currentPartyUid}
-              accessCode={currentAccessCode}
-              onLanguageChange={setLanguage}
-              onBack={handleBackToSetup}
-              onHostReady={handleHostReady}
-              onPlayerReady={handlePlayerReady}
-              onLeave={handleBackToSetup}
-            />
-          )}
-          {showAuthModal && (
-            <AuthModal
-              onAuthSuccess={handleAuthSuccess}
-              onClose={() => setShowAuthModal(false)}
-              language={language}
-              initialStep={authModalStep}
-            />
-          )}
-          {gameState === 'host-launch' && currentPartyUid && user && (
-            <HostLaunchScreen
-              language={language}
-              user={user}
-              partyUid={currentPartyUid}
-              accessCode={currentAccessCode}
-              startArticle={articles.start}
-              endArticle={articles.end}
-              onLaunch={() => handleStartGame(articles.start, articles.end, currentPartyUid)}
-              onBack={handleBackToPartyLobby}
-            />
-          )}
-          {gameState === 'player-waiting' && currentPartyUid && user && (
-            <PlayerLaunchScreen
-              language={language}
-              user={user}
-              partyUid={currentPartyUid}
-              onStartGame={(start, end) => handleStartGame(start, end, currentPartyUid)}
-              onBack={handleBackToPartyLobby}
-            />
-          )}
-        </>
+      {renderRoute()}
+      
+      {showAuthModal && (
+        <AuthModal
+          onAuthSuccess={handleAuthSuccess}
+          onClose={() => setShowAuthModal(false)}
+          language={language}
+          initialStep={authModalStep}
+        />
       )}
     </div>
   );

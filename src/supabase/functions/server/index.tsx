@@ -236,20 +236,29 @@ app.post("/make-server-92321c2f/party/:partyUid/start", async (c) => {
     const body = await c.req.json();
     const { userId } = body;
     
+    console.log('🚀 Starting party game:', partyUid, 'by user:', userId);
+    
     const party = await kv.get(`party:${partyUid}`);
     
     if (!party) {
+      console.log('❌ Party not found:', partyUid);
       return c.json({ error: "Party not found" }, 404);
     }
     
     // Only creator can start the game
     if (party.creatorId !== userId) {
+      console.log('❌ Only host can start. Creator:', party.creatorId, 'Requester:', userId);
       return c.json({ error: "Only host can start the game" }, 403);
     }
+    
+    console.log('✅ Setting party status to in_progress');
+    console.log('📋 Party articles:', party.startArticle, '→', party.endArticle);
     
     party.status = 'in_progress';
     party.startTime = new Date().toISOString();
     await kv.set(`party:${partyUid}`, party);
+    
+    console.log('✅ Party started successfully');
     
     return c.json({ success: true, party });
   } catch (error) {
@@ -418,7 +427,10 @@ app.post("/make-server-92321c2f/party/:partyUid/leave", async (c) => {
 app.post("/make-server-92321c2f/send-magic-link", async (c) => {
   try {
     const body = await c.req.json();
-    const { email, language = 'en' } = body;
+    let { email, language = 'en' } = body;
+    
+    // Normalize email: trim and lowercase
+    email = email?.trim().toLowerCase();
     
     if (!email || !email.includes('@')) {
       return c.json({ error: "Invalid email" }, 400);
@@ -521,7 +533,7 @@ app.post("/make-server-92321c2f/send-magic-link", async (c) => {
     
     const responseText = await unisenderResponse.text();
     console.log('📡 Response status:', unisenderResponse.status);
-    console.log('📡 Response body:', responseText);
+    console.log(' Response body:', responseText);
     
     if (!unisenderResponse.ok) {
       console.error('❌ UniSender Go HTTP error:', unisenderResponse.status, responseText);
@@ -575,13 +587,17 @@ app.post("/make-server-92321c2f/send-magic-link", async (c) => {
 app.post("/make-server-92321c2f/verify-code", async (c) => {
   try {
     const body = await c.req.json();
-    const { email, code } = body;
+    let { email, code } = body;
+    
+    // Normalize email: trim and lowercase
+    email = email?.trim().toLowerCase();
     
     if (!email || !code) {
       return c.json({ error: "Email and code are required" }, 400);
     }
     
     console.log('🔍 Verifying code for:', email);
+    console.log('🔍 Looking up key:', `email_code:${email}:${code}`);
     
     // Look up code in database
     const codeKey = `email_code:${email}:${code}`;
@@ -642,15 +658,187 @@ app.post("/make-server-92321c2f/verify-code", async (c) => {
     
     console.log('✅ Code verification complete, user ID:', userId);
     
+    // Generate session tokens for the user
+    console.log('🔑 Generating session tokens...');
+    
+    // Use admin API to generate a magic link (which includes tokens)
+    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: email,
+    });
+    
+    if (linkError || !linkData) {
+      console.error('❌ Error generating session tokens:', linkError);
+      return c.json({ error: "Failed to generate session" }, 500);
+    }
+    
+    console.log('✅ Session tokens generated successfully');
+    
     return c.json({ 
       success: true, 
       userId: userId,
       email: email,
       isNewUser,
+      // Return session tokens for the frontend to establish session
+      access_token: linkData.properties.access_token,
+      refresh_token: linkData.properties.refresh_token,
     });
     
   } catch (error) {
     console.error('❌ Error in verify-code:', error);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
+
+// Save game to user history
+app.post("/make-server-92321c2f/game/save", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { userId, startArticle, endArticle, clicks, timeElapsed, path, partyUid, language } = body;
+    
+    if (!userId || !startArticle || !endArticle || clicks === undefined) {
+      return c.json({ error: "Missing required fields" }, 400);
+    }
+    
+    console.log('💾 Saving game for user:', userId);
+    
+    const gameId = crypto.randomUUID();
+    const game = {
+      gameId,
+      userId,
+      startArticle,
+      endArticle,
+      clicks,
+      timeElapsed: timeElapsed || 0,
+      path: path || [],
+      partyUid: partyUid || null,
+      language: language || 'en',
+      completedAt: new Date().toISOString(),
+    };
+    
+    // Save to user's game history
+    await kv.set(`user_game:${userId}:${gameId}`, game);
+    
+    // If it's a multiplayer game, also save to party history
+    if (partyUid) {
+      const party = await kv.get(`party:${partyUid}`);
+      
+      if (party) {
+        // Initialize game history if it doesn't exist
+        if (!party.gameHistory) {
+          party.gameHistory = [];
+        }
+        
+        // Check if this game is already in the history
+        const existingGameIndex = party.gameHistory.findIndex(
+          (g: any) => g.startArticle === startArticle && g.endArticle === endArticle && g.completedAt
+        );
+        
+        if (existingGameIndex >= 0) {
+          // Add this user's result to existing game
+          if (!party.gameHistory[existingGameIndex].results) {
+            party.gameHistory[existingGameIndex].results = [];
+          }
+          
+          const resultIndex = party.gameHistory[existingGameIndex].results.findIndex(
+            (r: any) => r.userId === userId
+          );
+          
+          const userResult = {
+            userId,
+            clicks,
+            timeElapsed,
+            path,
+            completedAt: game.completedAt,
+          };
+          
+          if (resultIndex >= 0) {
+            // Update existing result
+            party.gameHistory[existingGameIndex].results[resultIndex] = userResult;
+          } else {
+            // Add new result
+            party.gameHistory[existingGameIndex].results.push(userResult);
+          }
+        } else {
+          // Create new game in history
+          party.gameHistory.push({
+            startArticle,
+            endArticle,
+            language,
+            completedAt: game.completedAt,
+            results: [{
+              userId,
+              clicks,
+              timeElapsed,
+              path,
+              completedAt: game.completedAt,
+            }],
+          });
+        }
+        
+        await kv.set(`party:${partyUid}`, party);
+        console.log('✅ Game saved to party history');
+      }
+    }
+    
+    console.log('✅ Game saved successfully');
+    
+    return c.json({ success: true, game });
+  } catch (error) {
+    console.error('❌ Error saving game:', error);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
+
+// Get user's game history
+app.get("/make-server-92321c2f/user/:userId/games", async (c) => {
+  try {
+    const userId = c.req.param("userId");
+    
+    console.log('📜 Fetching game history for user:', userId);
+    
+    // Get all games for this user
+    const games = await kv.getByPrefix(`user_game:${userId}:`);
+    
+    // Sort by completion date (newest first)
+    games.sort((a: any, b: any) => 
+      new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
+    );
+    
+    console.log('✅ Found', games.length, 'games');
+    
+    return c.json({ success: true, games });
+  } catch (error) {
+    console.error('❌ Error fetching game history:', error);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
+
+// Get party's game history
+app.get("/make-server-92321c2f/party/:partyUid/games", async (c) => {
+  try {
+    const partyUid = c.req.param("partyUid");
+    
+    console.log('📜 Fetching game history for party:', partyUid);
+    
+    const party = await kv.get(`party:${partyUid}`);
+    
+    if (!party) {
+      return c.json({ error: "Party not found" }, 404);
+    }
+    
+    const gameHistory = party.gameHistory || [];
+    
+    // Sort by completion date (newest first)
+    gameHistory.sort((a: any, b: any) => 
+      new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
+    );
+    
+    console.log('✅ Found', gameHistory.length, 'games in party history');
+    
+    return c.json({ success: true, games: gameHistory });
+  } catch (error) {
+    console.error('❌ Error fetching party game history:', error);
     return c.json({ error: "Internal server error" }, 500);
   }
 });

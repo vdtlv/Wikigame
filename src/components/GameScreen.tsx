@@ -293,6 +293,45 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
             }
           }
           
+          // Save game to user history (for both single-player and multiplayer)
+          if (user) {
+            const finalPath = [...navigationPath, articleName];
+            const totalMs = Date.now() - startTimeRef.current;
+            
+            console.log('💾 Saving game to user history for user:', user.id);
+            
+            try {
+              const response = await fetch(
+                `https://${projectId}.supabase.co/functions/v1/make-server-92321c2f/game/save`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${publicAnonKey}`,
+                  },
+                  body: JSON.stringify({
+                    userId: user.id,
+                    startArticle,
+                    endArticle,
+                    clicks: visitCounterRef.current,
+                    timeElapsed: totalMs,
+                    path: finalPath,
+                    partyUid: partyUid || null,
+                    language,
+                  }),
+                }
+              );
+
+              if (response.ok) {
+                console.log('✅ Game saved to user history');
+              } else {
+                console.error('❌ Failed to save game to history:', await response.text());
+              }
+            } catch (error) {
+              console.error('❌ Error saving game to history:', error);
+            }
+          }
+          
           setShowWinDialog(true);
         }
       }
@@ -305,23 +344,20 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
     };
   }, [currentPage, endArticle, language, onWin, navigationPath, partyUid, user]);
 
-  // Timer effect
+  // Timer effect - simple 1ms updates
   useEffect(() => {
-    // Only start the timer when the launch screen is hidden and game hasn't been won
     if (!showLaunchScreen && !showWinDialog) {
-      // Reset start time when game actually begins
       startTimeRef.current = Date.now();
       
       const interval = setInterval(() => {
-        setTimeElapsed(Math.floor((Date.now() - startTimeRef.current) / 1000));
+        setTimeElapsed(Date.now() - startTimeRef.current);
       }, 1);
 
       return () => clearInterval(interval);
     }
   }, [showLaunchScreen, showWinDialog]);
 
-  const formatTime = (seconds: number) => {
-    const totalMs = Date.now() - startTimeRef.current;
+  const formatTime = (totalMs: number) => {
     const mins = Math.floor(totalMs / 60000);
     const secs = Math.floor((totalMs % 60000) / 1000);
     const ms = totalMs % 1000;

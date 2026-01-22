@@ -56,6 +56,8 @@ export default function HostLaunchScreen({
     setIsLaunching(true);
 
     try {
+      console.log('🚀 Host launching game for party:', partyUid);
+      
       // Start the party game
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-92321c2f/party/${partyUid}/start`,
@@ -72,7 +74,12 @@ export default function HostLaunchScreen({
       );
 
       if (response.ok) {
+        const result = await response.json();
+        console.log('✅ Party started successfully:', result);
         onLaunch();
+      } else {
+        const error = await response.text();
+        console.error('❌ Failed to start party:', error);
       }
     } catch (error) {
       console.error('Error launching party game:', error);
