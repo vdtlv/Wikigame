@@ -372,6 +372,7 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
           onLeave={onGiveUp}
           language={language}
           goalArticle={endArticle}
+          articleReady={!loading}
         />
       ) : (
         <div className="bg-white content-stretch flex flex-col items-start relative size-full">
@@ -522,6 +523,7 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
                 endArticle={endArticle}
                 linksClicked={linksClicked}
                 timeElapsed={formatTime(timeElapsed)}
+                timeElapsedMs={timeElapsed}
                 navigationPath={navigationPath}
                 onPlayAgain={onGiveUp}
                 language={language}

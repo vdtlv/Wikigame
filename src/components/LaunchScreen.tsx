@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Language } from '../App';
 import { getTranslation } from '../translations';
 
@@ -7,22 +7,38 @@ interface LaunchScreenProps {
   onLeave: () => void;
   language: Language;
   goalArticle: string;
+  articleReady?: boolean;
 }
 
-export default function LaunchScreen({ onComplete, onLeave, language, goalArticle }: LaunchScreenProps) {
+export default function LaunchScreen({ onComplete, onLeave, language, goalArticle, articleReady = true }: LaunchScreenProps) {
   const [countdown, setCountdown] = useState(3);
+  const countdownDone = useRef(false);
 
+  // Fast countdown: 500ms per tick (3 → 2 → 1 → done in 1.5s)
   useEffect(() => {
     if (countdown > 0) {
       const timer = setTimeout(() => {
         setCountdown(countdown - 1);
-      }, 1000);
+      }, 500);
       return () => clearTimeout(timer);
     } else {
-      // When countdown reaches 0, call onComplete
+      countdownDone.current = true;
+    }
+  }, [countdown]);
+
+  // Complete when both countdown is done AND article is ready
+  useEffect(() => {
+    if (countdownDone.current && articleReady) {
       onComplete();
     }
-  }, [countdown, onComplete]);
+  }, [countdown, articleReady, onComplete]);
+
+  // Determine what to display
+  const displayText = countdown > 0
+    ? undefined // show number
+    : !articleReady
+      ? getTranslation(language, 'loading')
+      : undefined;
 
   return (
     <div className="bg-black content-stretch flex flex-col items-start relative size-full">
@@ -35,15 +51,21 @@ export default function LaunchScreen({ onComplete, onLeave, language, goalArticl
               {/* Countdown Circle */}
               <div className="grid-cols-[max-content] grid-rows-[max-content] inline-grid leading-[0] place-items-start relative shrink-0">
                 <div className="[grid-area:1_/_1] bg-white ml-0 mt-0 rounded-[101.5px] size-[200px]" />
-                <p className="[grid-area:1_/_1] font-['Inter:Bold',sans-serif] font-bold leading-[1.2] ml-[76px] mt-[57px] not-italic relative text-[72px] text-black text-nowrap tracking-[-2.16px] whitespace-pre">
-                  {countdown}
-                </p>
+                {countdown > 0 ? (
+                  <p className="[grid-area:1_/_1] font-['Inter:Bold',sans-serif] font-bold leading-[1.2] ml-[76px] mt-[57px] not-italic relative text-[72px] text-black text-nowrap tracking-[-2.16px] whitespace-pre">
+                    {countdown}
+                  </p>
+                ) : (
+                  <div className="[grid-area:1_/_1] flex items-center justify-center size-[200px]">
+                    <div className="size-[40px] border-4 border-black/20 border-t-black rounded-full animate-spin" />
+                  </div>
+                )}
               </div>
 
-              {/* Goal Info */}
+              {/* Status text */}
               <div className="content-stretch flex flex-col gap-[4px] h-[42px] items-center justify-center relative shrink-0 w-[268px]">
                 <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[normal] not-italic overflow-ellipsis overflow-hidden relative shrink-0 text-[16px] text-nowrap text-white whitespace-pre">
-                  {getTranslation(language, 'loading')}
+                  {displayText || getTranslation(language, 'loading')}
                 </p>
               </div>
             </div>

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Language } from '../App';
-import svgPaths from '../imports/svg-luu954fqih';
 import Logo from './Logo';
 import { supabase, supabaseUrl, supabaseAnonKey } from '../utils/supabase/client';
 
@@ -11,20 +10,73 @@ interface AuthModalProps {
   initialStep?: AuthStep;
 }
 
-type AuthStep = 'email' | 'nickname' | 'waiting' | 'code';
+type AuthStep = 'email' | 'nickname' | 'waiting' | 'code' | 'loginPassword' | 'createPassword';
 
 export default function AuthModal({ onClose, onAuthSuccess, language, initialStep = 'email' }: AuthModalProps) {
   const [step, setStep] = useState<AuthStep>(initialStep);
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [nickname, setNickname] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [tempUserId, setTempUserId] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   // Email validation
-  const isValidEmail = (email: string) => {
-    return email.includes('@') && email.includes('.') && email.length > 5;
+  const isValidEmail = (val: string) => {
+    return val.includes('@') && val.includes('.') && val.length > 5;
+  };
+
+  // Check if input is long enough to proceed
+  const canContinue = email.trim().length >= 2;
+
+  const handleContinue = async () => {
+    const trimmed = email.trim();
+    if (trimmed.length < 2) {
+      setError(language === 'ru' ? 'Минимум 2 символа' : 'Minimum 2 characters');
+      return;
+    }
+
+    if (isValidEmail(trimmed)) {
+      // Email flow → send verification code
+      await handleSendMagicLink();
+    } else {
+      // Login flow → check if login exists
+      setLoading(true);
+      setError('');
+      try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/make-server-92321c2f/check-login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseAnonKey}`,
+          },
+          body: JSON.stringify({ login: trimmed }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || 'Failed to check login');
+        }
+
+        const data = await response.json();
+
+        if (data.exists) {
+          // Login exists → show password input
+          setStep('loginPassword');
+        } else {
+          // New login → show create password screen
+          setStep('createPassword');
+        }
+      } catch (err: any) {
+        console.error('Check login error:', err);
+        setError(language === 'ru' ? `Ошибка: ${err.message}` : `Error: ${err.message}`);
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
   const handleSendMagicLink = async () => {
@@ -37,7 +89,6 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
     setError('');
 
     try {
-      // Call our custom endpoint to send magic link via UniSender Go
       const response = await fetch(`${supabaseUrl}/functions/v1/make-server-92321c2f/send-magic-link`, {
         method: 'POST',
         headers: {
@@ -58,12 +109,10 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
       setStep('code');
     } catch (err: any) {
       console.error('Send magic link error:', err);
-      
-      // Provide helpful error message
       if (err.message?.includes('Email service not configured')) {
         setError(
-          language === 'ru' 
-            ? 'Email сервис не настроен. Пожалуйста, используйте вход через Google.' 
+          language === 'ru'
+            ? 'Email сервис не настроен. Пожалуйста, используйте вход через Google.'
             : 'Email service not configured. Please use Google sign-in.'
         );
       } else {
@@ -102,22 +151,18 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
       }
 
       const data = await response.json();
-      console.log('✅ Code verified, user ID:', data.userId);
+      console.log('Code verified, user ID:', data.userId);
 
       // Establish Supabase session with the tokens
-      console.log('🔑 Establishing session with tokens...');
       const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
         access_token: data.access_token,
         refresh_token: data.refresh_token,
       });
 
       if (sessionError) {
-        console.error('❌ Error setting session:', sessionError);
+        console.error('Error setting session:', sessionError);
         throw new Error('Failed to establish session');
       }
-
-      console.log('✅ Session established successfully');
-      console.log('🔑 Session ID:', sessionData.session?.access_token.substring(0, 20) + '...');
 
       // Store userId temporarily for nickname setup
       setTempUserId(data.userId);
@@ -132,7 +177,6 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
       if (profileResponse.ok) {
         const profile = await profileResponse.json();
         if (profile.nickname) {
-          console.log('✅ User has nickname:', profile.nickname);
           onAuthSuccess(data.userId, profile.nickname);
           return;
         }
@@ -140,7 +184,6 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
 
       // No nickname, show nickname input
       setStep('nickname');
-
     } catch (err: any) {
       console.error('Verify code error:', err);
       setError(language === 'ru' ? `Неверный или истекший код` : `Invalid or expired code`);
@@ -159,22 +202,16 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
     setError('');
 
     try {
-      // Use tempUserId from code verification, or get current session user ID
       let userId = tempUserId;
-      
+
       if (!userId) {
-        console.log('⚠️ No tempUserId, checking current session...');
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user?.id) {
           userId = session.user.id;
-          console.log('✅ Got userId from current session:', userId);
         } else {
-          console.error('❌ No session found');
           throw new Error('No user ID found');
         }
       }
-
-      console.log('💾 Saving nickname for user:', userId);
 
       const response = await fetch(`${supabaseUrl}/functions/v1/make-server-92321c2f/user-profile`, {
         method: 'POST',
@@ -190,25 +227,116 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('❌ Failed to save profile:', response.status, errorData);
         throw new Error('Failed to save profile');
       }
-
-      console.log('✅ User profile saved successfully');
-      console.log('📧 Email:', email);
-      console.log('👤 Nickname:', nickname);
-      console.log('🔐 Login method: Email + Code');
-      console.log('🆔 User ID:', userId);
 
       onAuthSuccess(userId, nickname);
     } catch (err: any) {
       console.error('Set nickname error:', err);
-      console.error('📝 Error details:', {
-        message: err.message,
-        stack: err.stack,
-      });
       setError(language === 'ru' ? 'Ошибка сохранения имени' : 'Error saving name');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLoginWithPassword = async () => {
+    if (!password) {
+      setError(language === 'ru' ? 'Введите пароль' : 'Enter password');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/make-server-92321c2f/login-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({
+          login: email.trim(),
+          password,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          setError(language === 'ru' ? 'Неверный пароль' : 'Invalid password');
+        } else {
+          setError(language === 'ru' ? `Ошибка: ${errorData.error}` : `Error: ${errorData.error}`);
+        }
+        return;
+      }
+
+      const data = await response.json();
+      console.log('Login successful, userId:', data.userId);
+
+      // Save login session to localStorage
+      localStorage.setItem('wikirunner_login_session', JSON.stringify({
+        userId: data.userId,
+        nickname: data.nickname,
+        authMethod: 'password',
+      }));
+
+      onAuthSuccess(data.userId, data.nickname);
+    } catch (err: any) {
+      console.error('Login error:', err);
+      setError(language === 'ru' ? 'Ошибка входа' : 'Login error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateAccount = async () => {
+    if (!password || password.length < 4) {
+      setError(language === 'ru' ? 'Пароль минимум 4 символа' : 'Password minimum 4 characters');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setPasswordError(language === 'ru' ? 'Пароли не совпадают' : 'Passwords do not match');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setPasswordError('');
+
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/make-server-92321c2f/register-login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({
+          login: email.trim(),
+          password,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create account');
+      }
+
+      const data = await response.json();
+      console.log('Account created, userId:', data.userId);
+
+      // Save login session to localStorage
+      localStorage.setItem('wikirunner_login_session', JSON.stringify({
+        userId: data.userId,
+        nickname: data.nickname,
+        authMethod: 'password',
+      }));
+
+      onAuthSuccess(data.userId, data.nickname);
+    } catch (err: any) {
+      console.error('Register error:', err);
+      setError(language === 'ru' ? `Ошибка создания аккаунта: ${err.message}` : `Error creating account: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -219,9 +347,6 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
     setError('');
 
     try {
-      console.log('🔵 Starting Google OAuth sign-in...');
-      console.log('🔗 Redirect URL will be:', window.location.origin);
-      
       const { data, error: signInError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -235,41 +360,93 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
       });
 
       if (signInError) {
-        console.error('❌ Google OAuth error:', signInError);
         throw signInError;
       }
-      
-      console.log('✅ Google OAuth redirect initiated');
-      console.log('📊 OAuth data:', data);
-      
-      // 🔍 LOG THE EXACT URL WE'RE REDIRECTING TO
-      if (data?.url) {
-        console.log('🌐 FULL OAUTH URL:', data.url);
-        console.log('🔍 Parsing URL components...');
-        
-        try {
-          const oauthUrl = new URL(data.url);
-          console.log('📦 OAuth URL breakdown:');
-          console.log('  - Protocol:', oauthUrl.protocol);
-          console.log('  - Host:', oauthUrl.host);
-          console.log('  - Pathname:', oauthUrl.pathname);
-          console.log('  - Search params:', Object.fromEntries(oauthUrl.searchParams.entries()));
-          
-          // Check redirect_to parameter
-          const redirectTo = oauthUrl.searchParams.get('redirect_to');
-          console.log('🎯 REDIRECT_TO parameter:', redirectTo);
-        } catch (err) {
-          console.error('Failed to parse OAuth URL:', err);
-        }
-      }
-      
-      // Don't set loading to false here - we're redirecting
     } catch (err: any) {
-      console.error('❌ Error during Google sign-in:', err);
+      console.error('Error during Google sign-in:', err);
       setError(language === 'ru' ? 'Ошибка входа через Google' : 'Google sign-in error');
       setLoading(false);
     }
   };
+
+  // Validate password match in real time
+  const passwordsMatch = password.length > 0 && confirmPassword.length > 0 && password === confirmPassword;
+  const canCreateAccount = password.length >= 4 && passwordsMatch;
+
+  // Shared input component
+  const renderInput = (
+    type: string,
+    value: string,
+    onChange: (val: string) => void,
+    placeholder: string,
+    maxLength?: number,
+    hasError?: boolean
+  ) => (
+    <div className="content-stretch flex gap-[8px] items-center relative shrink-0 w-full">
+      <div className="basis-0 content-stretch flex flex-col gap-[8px] grow items-start min-h-px min-w-px relative shrink-0">
+        <div className={`bg-[#1e1e1e] min-w-[120px] relative rounded-[8px] shrink-0 w-full`}>
+          <div className="flex flex-row items-center min-w-inherit overflow-clip rounded-[inherit] size-full">
+            <div className="box-border content-stretch flex items-center min-w-inherit px-[16px] py-[12px] relative w-full">
+              <input
+                type={type}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder={placeholder}
+                maxLength={maxLength}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    if (step === 'email') handleContinue();
+                    else if (step === 'code') handleVerifyCode();
+                    else if (step === 'nickname') handleSetNickname();
+                    else if (step === 'loginPassword') handleLoginWithPassword();
+                    else if (step === 'createPassword' && canCreateAccount) handleCreateAccount();
+                  }
+                }}
+                className="basis-0 font-['Inter:Regular',sans-serif] font-normal grow leading-none min-h-px min-w-px not-italic relative shrink-0 text-[16px] text-white bg-transparent border-none outline-none placeholder:text-[rgba(255,255,255,0.4)]"
+              />
+            </div>
+          </div>
+          <div aria-hidden="true" className={`absolute border border-solid inset-[-0.5px] pointer-events-none rounded-[8.5px] ${hasError ? 'border-[#dc2626]' : 'border-[#444444]'}`} />
+        </div>
+      </div>
+    </div>
+  );
+
+  // Shared button component
+  const renderButton = (
+    onClick: () => void,
+    label: string,
+    loadingLabel: string,
+    active: boolean,
+    variant: 'primary' | 'secondary' = 'secondary'
+  ) => (
+    <button
+      onClick={onClick}
+      disabled={loading || !active}
+      className={`relative rounded-[8px] shrink-0 w-full transition-colors ${
+        active && !loading
+          ? variant === 'primary'
+            ? 'bg-white hover:bg-gray-100'
+            : 'bg-[#383838] hover:bg-[#484848]'
+          : 'bg-[#383838] cursor-not-allowed'
+      }`}
+    >
+      <div className="flex flex-row items-center justify-center overflow-clip rounded-[inherit] size-full">
+        <div className="box-border content-stretch flex gap-[8px] items-center justify-center px-[32px] py-[16px] relative w-full">
+          <p className={`font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[16px] text-nowrap whitespace-pre ${
+            active && !loading
+              ? variant === 'primary'
+                ? 'text-black'
+                : 'text-[#b3b3b3]'
+              : 'text-[#b3b3b3]'
+          }`}>
+            {loading ? loadingLabel : label}
+          </p>
+        </div>
+      </div>
+      <div aria-hidden="true" className="absolute border border-[#444444] border-solid inset-0 pointer-events-none rounded-[8px]" />
+    </button>
+  );
 
   return (
     <div className="fixed inset-0 bg-black flex flex-col items-center z-[9999]">
@@ -297,58 +474,35 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
       <div className="bg-black flex-1 flex items-center justify-center relative shrink-0 w-full">
         <div className="flex flex-col items-center w-full">
           <div className="box-border content-stretch flex flex-col gap-[10px] items-center px-[16px] py-[48px] relative w-full max-w-[360px]">
+
+            {/* Step: Email / Login input */}
             {step === 'email' && (
               <div className="content-stretch flex flex-col gap-[24px] items-center relative shrink-0">
                 {/* Heading */}
                 <div className="content-stretch flex flex-col gap-[8px] items-center not-italic relative shrink-0 text-center w-[328px]">
                   <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[1.2] relative shrink-0 text-[24px] text-white tracking-[-0.48px] w-full">
-                    {language === 'ru' ? 'Вход или регистрация' : 'Login or sign in'}
+                    {language === 'ru' ? 'Вход или регистрация' : 'Login or sign up'}
                   </p>
                   <div className="flex flex-col font-['Inter:Regular',sans-serif] font-normal justify-center leading-[0] relative shrink-0 text-[16px] text-[rgba(255,255,255,0.7)] w-full">
-                    <p className="leading-[1.4]">{language === 'ru' ? 'Введите e-mail для продолжения' : 'Enter your e-mail to continue'}</p>
+                    <p className="leading-[1.4]">{language === 'ru' ? 'Введите e-mail или логин' : 'Enter your e-mail or login'}</p>
                   </div>
                 </div>
 
                 {/* Input */}
                 <div className="content-stretch flex flex-col gap-[8px] items-start relative shrink-0 w-[328px]">
-                  <div className="content-stretch flex gap-[8px] items-center relative shrink-0 w-full">
-                    <div className="basis-0 content-stretch flex flex-col gap-[8px] grow items-start min-h-px min-w-px relative shrink-0">
-                      <div className="bg-[#1e1e1e] min-w-[120px] relative rounded-[8px] shrink-0 w-full">
-                        <div className="flex flex-row items-center min-w-inherit overflow-clip rounded-[inherit] size-full">
-                          <div className="box-border content-stretch flex items-center min-w-inherit px-[16px] py-[12px] relative w-full">
-                            <input
-                              type="email"
-                              value={email}
-                              onChange={(e) => setEmail(e.target.value)}
-                              placeholder={language === 'ru' ? 'Ваш e-mail' : 'Your e-mail'}
-                              className="basis-0 font-['Inter:Regular',sans-serif] font-normal grow leading-none min-h-px min-w-px not-italic relative shrink-0 text-[16px] text-white bg-transparent border-none outline-none placeholder:text-[rgba(255,255,255,0.4)]"
-                            />
-                          </div>
-                        </div>
-                        <div aria-hidden="true" className="absolute border border-[#444444] border-solid inset-[-0.5px] pointer-events-none rounded-[8.5px]" />
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleSendMagicLink}
-                    disabled={loading || !isValidEmail(email)}
-                    className={`relative rounded-[8px] shrink-0 w-full transition-colors ${
-                      isValidEmail(email) && !loading
-                        ? 'bg-white hover:bg-gray-100'
-                        : 'bg-[#383838] cursor-not-allowed'
-                    }`}
-                  >
-                    <div className="flex flex-row items-center justify-center overflow-clip rounded-[inherit] size-full">
-                      <div className="box-border content-stretch flex gap-[8px] items-center justify-center px-[32px] py-[16px] relative w-full">
-                        <p className={`font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[16px] text-nowrap whitespace-pre ${
-                          isValidEmail(email) && !loading ? 'text-black' : 'text-[#b3b3b3]'
-                        }`}>
-                          {loading ? (language === 'ru' ? 'Отправка...' : 'Sending...') : (language === 'ru' ? 'Продолжить' : 'Continue')}
-                        </p>
-                      </div>
-                    </div>
-                    <div aria-hidden="true" className="absolute border border-[#444444] border-solid inset-0 pointer-events-none rounded-[8px]" />
-                  </button>
+                  {renderInput(
+                    'text',
+                    email,
+                    (val) => { setEmail(val); setError(''); },
+                    language === 'ru' ? 'E-mail или логин' : 'E-mail or login'
+                  )}
+                  {renderButton(
+                    handleContinue,
+                    language === 'ru' ? 'Продолжить' : 'Continue',
+                    language === 'ru' ? 'Проверка...' : 'Checking...',
+                    canContinue,
+                    'primary'
+                  )}
                 </div>
 
                 {/* Or */}
@@ -386,6 +540,131 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
               </div>
             )}
 
+            {/* Step: Login with password (existing user) */}
+            {step === 'loginPassword' && (
+              <div className="content-stretch flex flex-col gap-[24px] items-center relative shrink-0">
+                {/* Heading */}
+                <div className="content-stretch flex flex-col gap-[8px] items-center not-italic relative shrink-0 text-center w-[328px]">
+                  <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[1.2] relative shrink-0 text-[24px] text-white tracking-[-0.48px] w-full">
+                    {language === 'ru' ? 'Добро пожаловать!' : 'Welcome back!'}
+                  </p>
+                  <div className="flex flex-col font-['Inter:Regular',sans-serif] font-normal justify-center leading-[0] relative shrink-0 text-[16px] text-[rgba(255,255,255,0.7)] w-full">
+                    <p className="leading-[1.4]">
+                      {language === 'ru'
+                        ? `Введите пароль, «${email.trim()}»`
+                        : `Enter your password, "${email.trim()}"`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Password Input */}
+                <div className="content-stretch flex flex-col gap-[8px] items-start relative shrink-0 w-[328px]">
+                  {renderInput(
+                    'password',
+                    password,
+                    (val) => { setPassword(val); setError(''); },
+                    language === 'ru' ? 'Пароль' : 'Password',
+                    undefined,
+                    !!error
+                  )}
+                  {renderButton(
+                    handleLoginWithPassword,
+                    language === 'ru' ? 'Войти' : 'Login',
+                    language === 'ru' ? 'Вход...' : 'Logging in...',
+                    password.length > 0,
+                    'primary'
+                  )}
+                </div>
+
+                {/* Back button */}
+                <button
+                  onClick={() => { setStep('email'); setPassword(''); setError(''); }}
+                  className="font-['Inter:Regular',sans-serif] font-normal text-[14px] text-[rgba(255,255,255,0.5)] hover:text-white transition-colors"
+                >
+                  {language === 'ru' ? '← Назад' : '← Back'}
+                </button>
+
+                {error && (
+                  <p className="text-[#dc2626] text-[14px] mt-2 font-['Inter:Regular',sans-serif]">
+                    {error}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Step: Create password (new user) */}
+            {step === 'createPassword' && (
+              <div className="content-stretch flex flex-col gap-[24px] items-center relative shrink-0">
+                {/* Heading */}
+                <div className="content-stretch flex flex-col gap-[8px] items-center not-italic relative shrink-0 text-center w-[328px]">
+                  <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[1.2] relative shrink-0 text-[24px] text-white tracking-[-0.48px] w-full">
+                    {language === 'ru' ? 'Создание аккаунта' : 'Create account'}
+                  </p>
+                  <div className="flex flex-col font-['Inter:Regular',sans-serif] font-normal justify-center leading-[0] relative shrink-0 text-[16px] text-[rgba(255,255,255,0.7)] w-full">
+                    <p className="leading-[1.4]">
+                      {language === 'ru'
+                        ? `Придумайте пароль для «${email.trim()}»`
+                        : `Create a password for "${email.trim()}"`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Password Inputs */}
+                <div className="content-stretch flex flex-col gap-[8px] items-start relative shrink-0 w-[328px]">
+                  {renderInput(
+                    'password',
+                    password,
+                    (val) => { setPassword(val); setPasswordError(''); setError(''); },
+                    language === 'ru' ? 'Пароль' : 'Password'
+                  )}
+                  {renderInput(
+                    'password',
+                    confirmPassword,
+                    (val) => { setConfirmPassword(val); setPasswordError(''); setError(''); },
+                    language === 'ru' ? 'Повторите пароль' : 'Confirm password',
+                    undefined,
+                    !!passwordError
+                  )}
+
+                  {/* Password mismatch hint */}
+                  {confirmPassword.length > 0 && password.length > 0 && !passwordsMatch && (
+                    <p className="text-[#f59e0b] text-[13px] font-['Inter:Regular',sans-serif]">
+                      {language === 'ru' ? 'Пароли не совпадают' : 'Passwords do not match'}
+                    </p>
+                  )}
+
+                  {password.length > 0 && password.length < 4 && (
+                    <p className="text-[rgba(255,255,255,0.4)] text-[13px] font-['Inter:Regular',sans-serif]">
+                      {language === 'ru' ? 'Минимум 4 символа' : 'Minimum 4 characters'}
+                    </p>
+                  )}
+
+                  {renderButton(
+                    handleCreateAccount,
+                    language === 'ru' ? 'Создать аккаунт' : 'Create account',
+                    language === 'ru' ? 'Создание...' : 'Creating...',
+                    canCreateAccount,
+                    'primary'
+                  )}
+                </div>
+
+                {/* Back button */}
+                <button
+                  onClick={() => { setStep('email'); setPassword(''); setConfirmPassword(''); setError(''); setPasswordError(''); }}
+                  className="font-['Inter:Regular',sans-serif] font-normal text-[14px] text-[rgba(255,255,255,0.5)] hover:text-white transition-colors"
+                >
+                  {language === 'ru' ? '← Назад' : '← Back'}
+                </button>
+
+                {(error || passwordError) && (
+                  <p className="text-[#dc2626] text-[14px] mt-2 font-['Inter:Regular',sans-serif]">
+                    {error || passwordError}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Step: Verify email code */}
             {step === 'code' && (
               <div className="content-stretch flex flex-col gap-[24px] items-center relative shrink-0">
                 {/* Heading */}
@@ -400,40 +679,28 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
 
                 {/* Input */}
                 <div className="content-stretch flex flex-col gap-[8px] items-start relative shrink-0 w-[328px]">
-                  <div className="content-stretch flex gap-[8px] items-center relative shrink-0 w-full">
-                    <div className="basis-0 content-stretch flex flex-col gap-[8px] grow items-start min-h-px min-w-px relative shrink-0">
-                      <div className="bg-[#1e1e1e] min-w-[120px] relative rounded-[8px] shrink-0 w-full">
-                        <div className="flex flex-row items-center min-w-inherit overflow-clip rounded-[inherit] size-full">
-                          <div className="box-border content-stretch flex items-center min-w-inherit px-[16px] py-[12px] relative w-full">
-                            <input
-                              type="text"
-                              value={code}
-                              onChange={(e) => setCode(e.target.value)}
-                              placeholder={language === 'ru' ? 'Ваш код' : 'Your code'}
-                              maxLength={6}
-                              className="basis-0 font-['Inter:Regular',sans-serif] font-normal grow leading-none min-h-px min-w-px not-italic relative shrink-0 text-[16px] text-white bg-transparent border-none outline-none placeholder:text-[rgba(255,255,255,0.4)]"
-                            />
-                          </div>
-                        </div>
-                        <div aria-hidden="true" className="absolute border border-[#444444] border-solid inset-[-0.5px] pointer-events-none rounded-[8.5px]" />
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleVerifyCode}
-                    disabled={loading}
-                    className="bg-[#383838] relative rounded-[8px] shrink-0 w-full hover:bg-[#484848] transition-colors disabled:opacity-50"
-                  >
-                    <div className="flex flex-row items-center justify-center overflow-clip rounded-[inherit] size-full">
-                      <div className="box-border content-stretch flex gap-[8px] items-center justify-center px-[32px] py-[16px] relative w-full">
-                        <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[#b3b3b3] text-[16px] text-nowrap whitespace-pre">
-                          {loading ? (language === 'ru' ? 'Проверка...' : 'Verifying...') : (language === 'ru' ? 'Проверить код' : 'Verify code')}
-                        </p>
-                      </div>
-                    </div>
-                    <div aria-hidden="true" className="absolute border border-[#444444] border-solid inset-0 pointer-events-none rounded-[8px]" />
-                  </button>
+                  {renderInput(
+                    'text',
+                    code,
+                    (val) => { setCode(val); setError(''); },
+                    language === 'ru' ? 'Ваш код' : 'Your code',
+                    6
+                  )}
+                  {renderButton(
+                    handleVerifyCode,
+                    language === 'ru' ? 'Проверить код' : 'Verify code',
+                    language === 'ru' ? 'Проверка...' : 'Verifying...',
+                    code.length === 6
+                  )}
                 </div>
+
+                {/* Back button */}
+                <button
+                  onClick={() => { setStep('email'); setCode(''); setError(''); }}
+                  className="font-['Inter:Regular',sans-serif] font-normal text-[14px] text-[rgba(255,255,255,0.5)] hover:text-white transition-colors"
+                >
+                  {language === 'ru' ? '← Назад' : '← Back'}
+                </button>
 
                 {error && (
                   <p className="text-[#dc2626] text-[14px] mt-2 font-['Inter:Regular',sans-serif]">
@@ -443,6 +710,7 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
               </div>
             )}
 
+            {/* Step: Set nickname (after email verification) */}
             {step === 'nickname' && (
               <div className="content-stretch flex flex-col gap-[24px] items-center relative shrink-0">
                 {/* Heading */}
@@ -457,38 +725,18 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
 
                 {/* Input */}
                 <div className="content-stretch flex flex-col gap-[8px] items-start relative shrink-0 w-[328px]">
-                  <div className="content-stretch flex gap-[8px] items-center relative shrink-0 w-full">
-                    <div className="basis-0 content-stretch flex flex-col gap-[8px] grow items-start min-h-px min-w-px relative shrink-0">
-                      <div className="bg-[#1e1e1e] min-w-[120px] relative rounded-[8px] shrink-0 w-full">
-                        <div className="flex flex-row items-center min-w-inherit overflow-clip rounded-[inherit] size-full">
-                          <div className="box-border content-stretch flex items-center min-w-inherit px-[16px] py-[12px] relative w-full">
-                            <input
-                              type="text"
-                              value={nickname}
-                              onChange={(e) => setNickname(e.target.value)}
-                              placeholder={language === 'ru' ? 'Ваше имя' : 'Your name'}
-                              className="basis-0 font-['Inter:Regular',sans-serif] font-normal grow leading-none min-h-px min-w-px not-italic relative shrink-0 text-[16px] text-white bg-transparent border-none outline-none placeholder:text-[rgba(255,255,255,0.4)]"
-                            />
-                          </div>
-                        </div>
-                        <div aria-hidden="true" className="absolute border border-[#444444] border-solid inset-[-0.5px] pointer-events-none rounded-[8.5px]" />
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleSetNickname}
-                    disabled={loading}
-                    className="bg-[#383838] relative rounded-[8px] shrink-0 w-full hover:bg-[#484848] transition-colors disabled:opacity-50"
-                  >
-                    <div className="flex flex-row items-center justify-center overflow-clip rounded-[inherit] size-full">
-                      <div className="box-border content-stretch flex gap-[8px] items-center justify-center px-[32px] py-[16px] relative w-full">
-                        <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[#b3b3b3] text-[16px] text-nowrap whitespace-pre">
-                          {loading ? (language === 'ru' ? 'Сохранение...' : 'Saving...') : (language === 'ru' ? 'Продолжить' : 'Continue')}
-                        </p>
-                      </div>
-                    </div>
-                    <div aria-hidden="true" className="absolute border border-[#444444] border-solid inset-0 pointer-events-none rounded-[8px]" />
-                  </button>
+                  {renderInput(
+                    'text',
+                    nickname,
+                    (val) => { setNickname(val); setError(''); },
+                    language === 'ru' ? 'Ваше имя' : 'Your name'
+                  )}
+                  {renderButton(
+                    handleSetNickname,
+                    language === 'ru' ? 'Продолжить' : 'Continue',
+                    language === 'ru' ? 'Сохранение...' : 'Saving...',
+                    nickname.length >= 2
+                  )}
                 </div>
 
                 {error && (
@@ -498,6 +746,7 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
                 )}
               </div>
             )}
+
           </div>
         </div>
       </div>

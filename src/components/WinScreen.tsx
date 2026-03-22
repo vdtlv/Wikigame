@@ -6,6 +6,7 @@ interface WinScreenProps {
   endArticle: string;
   linksClicked: number;
   timeElapsed: string;
+  timeElapsedMs: number;
   navigationPath: string[];
   onPlayAgain: () => void;
   language: Language;
@@ -16,10 +17,15 @@ export default function WinScreen({
   endArticle,
   linksClicked,
   timeElapsed,
+  timeElapsedMs,
   navigationPath,
   onPlayAgain,
   language
 }: WinScreenProps) {
+  const seconds = timeElapsedMs / 1000;
+  const denominator = seconds * 0.5 + linksClicked * 5;
+  const score = denominator > 0 ? Math.floor(10000 / denominator) : 9999;
+
   return (
     <div className="bg-white content-stretch flex flex-col items-start relative size-full">
       {/* Container */}
@@ -46,8 +52,18 @@ export default function WinScreen({
                       </p>
                     </div>
 
-                    {/* Stats */}
-                    <div className="content-stretch flex gap-[24px] items-center justify-center relative shrink-0 w-full max-w-[328px]">
+                    {/* Stats - Score, Time, Clicks on same line */}
+                    <div className="content-stretch flex gap-[24px] items-center justify-center relative shrink-0 w-full max-w-[420px]">
+                      {/* Score */}
+                      <div className="content-stretch flex flex-col gap-[4px] items-center leading-[normal] not-italic relative shrink-0 text-[16px] text-nowrap flex-1 whitespace-pre">
+                        <p className="font-['Inter:Regular',sans-serif] font-normal relative shrink-0 text-[#757575]">
+                          {getTranslation(language, 'score')}
+                        </p>
+                        <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold relative shrink-0 text-[#fbbf24] text-[16px]">
+                          {score}
+                        </p>
+                      </div>
+
                       {/* Time Elapsed */}
                       <div className="content-stretch flex flex-col gap-[4px] items-center leading-[normal] not-italic relative shrink-0 text-[16px] text-nowrap flex-1 whitespace-pre">
                         <p className="font-['Inter:Regular',sans-serif] font-normal relative shrink-0 text-[#757575]">

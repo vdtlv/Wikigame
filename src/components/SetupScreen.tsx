@@ -57,6 +57,11 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
   
   // View state
   const [currentView, setCurrentView] = useState<'quickplay' | 'multiplayer'>(initialView || 'quickplay');
+
+  // Sync currentView with initialView prop when it changes (e.g. hash navigation)
+  useEffect(() => {
+    setCurrentView(initialView || 'quickplay');
+  }, [initialView]);
   
   // Multiplayer state
   const [multiplayerStep, setMultiplayerStep] = useState<MultiplayerStep>('selection');

@@ -213,6 +213,46 @@ export default function App() {
 
   const checkSession = async () => {
     try {
+      // First check for login-based session in localStorage
+      const loginSession = localStorage.getItem('wikirunner_login_session');
+      if (loginSession) {
+        try {
+          const parsed = JSON.parse(loginSession);
+          if (parsed.userId && parsed.nickname) {
+            console.log('🔄 Restoring login-based session');
+            console.log('👤 Nickname:', parsed.nickname);
+            console.log('🔐 Login method: Password');
+            console.log('🆔 User ID:', parsed.userId);
+
+            // Verify the profile still exists on server
+            const profileResponse = await fetch(`${supabaseUrl}/functions/v1/make-server-92321c2f/user-profile/${parsed.userId}`, {
+              headers: {
+                'Authorization': `Bearer ${supabaseAnonKey}`,
+              },
+            });
+
+            if (profileResponse.ok) {
+              const profile = await profileResponse.json();
+              setUser({
+                id: parsed.userId,
+                nickname: profile.nickname || parsed.nickname,
+              });
+              console.log('✅ Login-based session restored');
+              setIsCheckingAuth(false);
+              return;
+            } else {
+              // Profile gone, clear stale session
+              console.log('⚠️ Login session stale, clearing');
+              localStorage.removeItem('wikirunner_login_session');
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing login session:', e);
+          localStorage.removeItem('wikirunner_login_session');
+        }
+      }
+
+      // Then check Supabase session
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session?.user) {
@@ -287,6 +327,8 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+    // Clear login-based session
+    localStorage.removeItem('wikirunner_login_session');
     await supabase.auth.signOut();
     setUser(null);
     console.log('🚪 User logged out successfully');

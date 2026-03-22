@@ -843,4 +843,186 @@ app.get("/make-server-92321c2f/party/:partyUid/games", async (c) => {
   }
 });
 
+// =============================================
+// Login + Password Authentication
+// =============================================
+
+// Helper: hash password with salt using Web Crypto
+async function hashPassword(password: string, salt: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: encoder.encode(salt),
+      iterations: 100000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    256
+  );
+  // Convert to hex string
+  return Array.from(new Uint8Array(bits))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function generateSalt(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Check if a login (nickname) exists
+app.post("/make-server-92321c2f/check-login", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { login } = body;
+
+    if (!login || login.length < 2) {
+      return c.json({ error: "Login must be at least 2 characters" }, 400);
+    }
+
+    const normalizedLogin = login.trim().toLowerCase();
+    const account = await kv.get(`login_account:${normalizedLogin}`);
+
+    return c.json({ exists: !!account });
+  } catch (error) {
+    console.log("Error checking login:", error);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
+
+// Register with login + password
+app.post("/make-server-92321c2f/register-login", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { login, password } = body;
+
+    if (!login || login.length < 2) {
+      return c.json({ error: "Login must be at least 2 characters" }, 400);
+    }
+
+    if (!password || password.length < 4) {
+      return c.json({ error: "Password must be at least 4 characters" }, 400);
+    }
+
+    const normalizedLogin = login.trim().toLowerCase();
+
+    // Check if login already exists
+    const existingAccount = await kv.get(`login_account:${normalizedLogin}`);
+    if (existingAccount) {
+      return c.json({ error: "Login already exists" }, 409);
+    }
+
+    // Hash password
+    const salt = generateSalt();
+    const passwordHash = await hashPassword(password, salt);
+
+    // Create a Supabase Auth user with synthetic email so the user appears in the dashboard
+    const syntheticEmail = `${normalizedLogin}@login.wikirunner.local`;
+    const syntheticPassword = crypto.randomUUID(); // random password, not used for login
+
+    const { data: newUserData, error: createError } = await supabaseAdmin.auth.admin.createUser({
+      email: syntheticEmail,
+      password: syntheticPassword,
+      email_confirm: true,
+      user_metadata: {
+        nickname: login.trim(),
+        auth_method: 'password',
+        login: normalizedLogin,
+      },
+    });
+
+    if (createError || !newUserData.user) {
+      console.log('❌ Error creating Supabase Auth user for login account:', createError);
+      return c.json({ error: "Failed to create user account" }, 500);
+    }
+
+    const userId = newUserData.user.id;
+    console.log('✅ Supabase Auth user created for login:', normalizedLogin, 'userId:', userId);
+
+    const account = {
+      login: login.trim(),
+      normalizedLogin,
+      passwordHash,
+      salt,
+      userId,
+      syntheticEmail,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Save account
+    await kv.set(`login_account:${normalizedLogin}`, account);
+
+    // Also save user profile with the login as nickname
+    const profile = {
+      userId,
+      nickname: login.trim(),
+      email: syntheticEmail,
+      authMethod: 'password',
+      regdate: new Date().toISOString(),
+    };
+    await kv.set(`user_profile:${userId}`, profile);
+
+    console.log('✅ New login account created:', normalizedLogin, 'userId:', userId);
+
+    return c.json({
+      success: true,
+      userId,
+      nickname: login.trim(),
+    });
+  } catch (error) {
+    console.log("Error registering login:", error);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
+
+// Login with password
+app.post("/make-server-92321c2f/login-password", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { login, password } = body;
+
+    if (!login || !password) {
+      return c.json({ error: "Login and password are required" }, 400);
+    }
+
+    const normalizedLogin = login.trim().toLowerCase();
+    const account = await kv.get(`login_account:${normalizedLogin}`);
+
+    if (!account) {
+      return c.json({ error: "Account not found" }, 404);
+    }
+
+    // Verify password
+    const passwordHash = await hashPassword(password, account.salt);
+
+    if (passwordHash !== account.passwordHash) {
+      return c.json({ error: "Invalid password" }, 401);
+    }
+
+    // Fetch profile to get latest nickname
+    const profile = await kv.get(`user_profile:${account.userId}`);
+    const nickname = profile?.nickname || account.login;
+
+    console.log('✅ Login successful:', normalizedLogin, 'userId:', account.userId);
+
+    return c.json({
+      success: true,
+      userId: account.userId,
+      nickname,
+    });
+  } catch (error) {
+    console.log("Error during login:", error);
+    return c.json({ error: "Internal server error" }, 500);
+  }
+});
+
 Deno.serve(app.fetch);
