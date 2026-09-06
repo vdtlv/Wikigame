@@ -22,6 +22,7 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
   const [showWinDialog, setShowWinDialog] = useState(false);
   const [articleContent, setArticleContent] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isFooterExpanded, setIsFooterExpanded] = useState(false);
   const [showLaunchScreen, setShowLaunchScreen] = useState(true);
   const [navigationPath, setNavigationPath] = useState<string[]>([startArticle]);
@@ -31,7 +32,9 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
 
   // Fetch Wikipedia article content
   const fetchArticle = async (articleName: string) => {
+    console.log('🔄 fetchArticle called for:', articleName);
     setLoading(true);
+    setError(null);
     try {
       const wikiDomain = language === 'ru' ? 'ru.wikipedia.org' : 'en.wikipedia.org';
       // Use MediaWiki API with action=parse for full article content
@@ -202,9 +205,12 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
       
       setArticleContent(fullHtml);
       setLoading(false);
+      console.log('✅ Article loaded successfully:', articleName);
     } catch (error) {
       console.error('Failed to fetch article:', error);
-      setArticleContent('<html><body><div style="padding: 32px; text-align: center; color: #dc2626;">Failed to load article. Please try again.</div></body></html>');
+      const errorMessage = `<html><body style="margin:0;padding:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#fff;"><div style="padding:32px;text-align:center;color:#dc2626;font-family:system-ui,-apple-system,sans-serif;"><h2 style="margin:0 0 8px 0;">Failed to load article</h2><p style="margin:0;color:#6b7280;">${articleName}</p></div></body></html>`;
+      setArticleContent(errorMessage);
+      setError('Failed to load article');
       setLoading(false);
     }
   };
@@ -380,17 +386,21 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
           <div className="basis-0 bg-black grow min-h-px min-w-px relative shrink-0 w-full">
             <div className="size-full">
               <div className="box-border content-stretch flex flex-col gap-[10px] items-start p-[8px] lg:p-[16px] relative size-full">
-                <div className="basis-0 bg-white grow min-h-px min-w-px rounded-[32px] shrink-0 w-full overflow-hidden relative">
+                <div className="basis-0 bg-white grow min-h-px min-w-px rounded-[16px] lg:rounded-[32px] shrink-0 w-full overflow-hidden relative">
                   {loading ? (
-                    <div className="flex items-center justify-center h-full">
-                      <div className="text-gray-500">Loading...</div>
+                    <div className="flex items-center justify-center h-full bg-white">
+                      <div className="flex flex-col items-center gap-3">
+                        <div className="w-8 h-8 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                        <div className="text-gray-600 text-sm">Loading article...</div>
+                      </div>
                     </div>
                   ) : (
                     <iframe
                       ref={iframeRef}
                       srcDoc={articleContent}
                       sandbox="allow-same-origin allow-popups allow-scripts"
-                      className="size-full border-0 rounded-[32px]"
+                      className="size-full border-0"
+                      style={{ borderRadius: 'inherit' }}
                       title="Wikipedia Article"
                       key={currentPage}
                     />
