@@ -7,6 +7,7 @@ import PartyLobbyScreen from './components/PartyLobbyScreen';
 import HostLaunchScreen from './components/HostLaunchScreen';
 import PlayerLaunchScreen from './components/PlayerLaunchScreen';
 import { supabase, supabaseUrl, supabaseAnonKey } from './utils/supabase/client';
+import React from 'react';
 
 export type Language = 'en' | 'ru';
 
