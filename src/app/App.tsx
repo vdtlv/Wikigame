@@ -164,11 +164,9 @@ export default function App() {
           
           if (profile.nickname) {
             // Log authentication status
-            const authMethod = session.user.app_metadata.provider || 'email';
             console.log('✅ User logged in successfully');
             console.log('📧 Email:', session.user.email);
             console.log('👤 Nickname:', profile.nickname);
-            console.log('🔐 Login method:', authMethod === 'google' ? 'Google OAuth' : 'Email Magic Link');
             console.log('🆔 User ID:', session.user.id);
             
             setUser({
@@ -192,7 +190,7 @@ export default function App() {
             setShowAuthModal(true);
           }
         } else if (response.status === 404) {
-          // Profile doesn't exist yet - first time Google user
+          // Profile doesn't exist yet - first time user
           console.log('🆕 First time user - no profile found');
           console.log('📝 Showing nickname modal for new user to set up profile');
           setAuthModalStep('nickname');
@@ -277,11 +275,9 @@ export default function App() {
           });
           
           // Log authentication status
-          const authMethod = session.user.app_metadata.provider || 'email';
           console.log('✅ User is logged in');
           console.log('📧 Email:', session.user.email);
           console.log('👤 Nickname:', profile.nickname);
-          console.log('🔐 Login method:', authMethod === 'google' ? 'Google OAuth' : 'Email Magic Link');
           console.log('🆔 User ID:', session.user.id);
         }
       } else {

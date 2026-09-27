@@ -112,8 +112,8 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
       if (err.message?.includes('Email service not configured')) {
         setError(
           language === 'ru'
-            ? 'Email сервис не настроен. Пожалуйста, используйте вход через Google.'
-            : 'Email service not configured. Please use Google sign-in.'
+            ? 'Email сервис не настроен.'
+            : 'Email service not configured.'
         );
       } else {
         setError(language === 'ru' ? `Ошибка отправки ссылки: ${err.message}` : `Error sending link: ${err.message}`);
@@ -342,33 +342,6 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
-    setError('');
-
-    try {
-      const { data, error: signInError } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin,
-          skipBrowserRedirect: false,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-        },
-      });
-
-      if (signInError) {
-        throw signInError;
-      }
-    } catch (err: any) {
-      console.error('Error during Google sign-in:', err);
-      setError(language === 'ru' ? 'Ошибка входа через Google' : 'Google sign-in error');
-      setLoading(false);
-    }
-  };
-
   // Validate password match in real time
   const passwordsMatch = password.length > 0 && confirmPassword.length > 0 && password === confirmPassword;
   const canCreateAccount = password.length >= 4 && passwordsMatch;
@@ -503,33 +476,6 @@ export default function AuthModal({ onClose, onAuthSuccess, language, initialSte
                     canContinue,
                     'primary'
                   )}
-                </div>
-
-                {/* Or */}
-                <div className="content-stretch flex flex-col gap-[8px] items-center relative shrink-0 w-[328px]">
-                  <div className="flex flex-col font-['Inter:Regular',sans-serif] font-normal justify-center leading-[0] not-italic relative shrink-0 text-[16px] text-[rgba(255,255,255,0.7)] text-center w-full">
-                    <p className="leading-[1.4]">{language === 'ru' ? 'или' : 'or'}</p>
-                  </div>
-                </div>
-
-                {/* Google Button */}
-                <div className="content-stretch flex flex-col gap-[24px] items-center relative shrink-0 w-[328px]">
-                  <div className="content-stretch flex flex-col gap-[8px] items-start relative shrink-0 w-full">
-                    <button
-                      onClick={handleGoogleSignIn}
-                      disabled={loading}
-                      className="bg-[#383838] relative rounded-[8px] shrink-0 w-full hover:bg-[#484848] transition-colors disabled:opacity-50"
-                    >
-                      <div className="flex flex-row items-center justify-center overflow-clip rounded-[inherit] size-full">
-                        <div className="box-border content-stretch flex gap-[8px] items-center justify-center px-[32px] py-[16px] relative w-full">
-                          <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[#b3b3b3] text-[16px] text-nowrap whitespace-pre">
-                            {language === 'ru' ? 'Продолжить с Google' : 'Continue with Google'}
-                          </p>
-                        </div>
-                      </div>
-                      <div aria-hidden="true" className="absolute border border-[#444444] border-solid inset-0 pointer-events-none rounded-[8px]" />
-                    </button>
-                  </div>
                 </div>
 
                 {error && (
