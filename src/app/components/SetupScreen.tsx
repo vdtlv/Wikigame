@@ -10,7 +10,6 @@ import HostLaunchScreen from './HostLaunchScreen';
 import PlayerPartyScreen from './PlayerPartyScreen';
 import PlayerLaunchScreen from './PlayerLaunchScreen';
 import Header from './Header';
-import MobileButtonGroup from './MobileButtonGroup';
 
 interface SetupScreenProps {
   onStartGame: (start: string, end: string, partyUid?: string) => void;
@@ -90,10 +89,6 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
   // Tooltip state
   const [showMultiplayerTooltipDesktop, setShowMultiplayerTooltipDesktop] = useState(false);
   const [showMultiplayerTooltipMobile, setShowMultiplayerTooltipMobile] = useState(false);
-  
-  // Profile menu state
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [showMobileProfileMenu, setShowMobileProfileMenu] = useState(false);
   
   const startInputRef = useRef<HTMLInputElement>(null);
   const endInputRef = useRef<HTMLInputElement>(null);
@@ -566,96 +561,10 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
 
   return (
     <div className="bg-[rgb(0,0,0)] content-stretch flex flex-col items-center relative size-full">
-      {/* Mobile Profile Menu Overlay */}
-      {showMobileProfileMenu && (
-        <div 
-          className="fixed inset-0 bg-[rgba(0,0,0,0.7)] z-[1004]"
-          onClick={() => setShowMobileProfileMenu(false)}
-        >
-          {/* Profile Menu - Bottom Left */}
-          <div 
-            className="absolute bg-[#1e1e1e] bottom-[24px] left-[24px] rounded-[8px] w-[312px] z-[1005]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="box-border content-stretch flex flex-col items-start overflow-clip px-[16px] py-[8px] relative rounded-[inherit] w-[312px]">
-              {/* Menu Header */}
-              <div className="relative shrink-0 w-full">
-                <div className="overflow-clip rounded-[inherit] size-full">
-                  <div className="box-border content-stretch flex flex-col items-start leading-[1.4] not-italic p-[8px] relative w-full">
-                    <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold relative shrink-0 text-[16px] text-white w-[264px]">{user?.nickname || 'User'}</p>
-                    <p className="font-['Inter:Regular',sans-serif] font-normal min-w-full relative shrink-0 text-[14px] text-[rgba(255,255,255,0.7)] w-[min-content]">{user?.email || ''}</p>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Separator */}
-              <div className="box-border content-stretch flex flex-col items-center justify-center px-0 py-[8px] relative shrink-0 w-full">
-                <div className="bg-[#444444] h-px shrink-0 w-full" />
-              </div>
-              
-              {/* Logout Button */}
-              <div className="relative rounded-[8px] shrink-0 w-full">
-                <div className="overflow-clip rounded-[inherit] size-full">
-                  <div className="box-border content-stretch flex flex-col items-start p-[8px] relative w-full">
-                    <button
-                      onClick={() => {
-                        setShowMobileProfileMenu(false);
-                        onLogout();
-                      }}
-                      className="box-border content-stretch flex gap-[12px] items-start overflow-clip px-0 py-[4px] relative rounded-[8px] shrink-0 w-full hover:bg-[#2a2a2a] transition-colors"
-                    >
-                      <div className="basis-0 content-stretch flex flex-col gap-[4px] grow items-start min-h-px min-w-px relative shrink-0">
-                        <div className="content-stretch flex items-center justify-between relative shrink-0 w-full">
-                          <p className="basis-0 font-['Inter:Regular',sans-serif] font-normal grow leading-[1.4] min-h-px min-w-px not-italic relative shrink-0 text-[16px] text-white">{language === 'ru' ? 'Выйти' : 'Log out'}</p>
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div aria-hidden="true" className="absolute border border-[#444444] border-solid inset-0 pointer-events-none rounded-[8px] shadow-[0px_4px_4px_-1px_rgba(12,12,13,0.1),0px_4px_4px_-1px_rgba(12,12,13,0.05)]" />
-          </div>
-        </div>
-      )}
-      
       {/* Header */}
       <Header
         language={language}
-        user={user}
         onLanguageChange={onLanguageChange}
-        onLogout={onLogout}
-        currentView={currentView}
-        onViewChange={(view) => {
-          if (view === 'quickplay' && onNavigateToHome) {
-            onNavigateToHome();
-          } else if (view === 'multiplayer' && onNavigateToMultiplayer) {
-            onNavigateToMultiplayer();
-          } else {
-            setCurrentView(view);
-          }
-        }}
-        showTabs={showHeaderTabs}
-        showProfileMenu={showProfileMenu}
-        setShowProfileMenu={setShowProfileMenu}
-        setShowMobileProfileMenu={setShowMobileProfileMenu}
-        onShowAuth={onShowAuth}
-      />
-      
-      {/* Mobile Button Group */}
-      <MobileButtonGroup
-        currentView={currentView}
-        onViewChange={(view) => {
-          if (view === 'quickplay' && onNavigateToHome) {
-            onNavigateToHome();
-          } else if (view === 'multiplayer' && onNavigateToMultiplayer) {
-            onNavigateToMultiplayer();
-          } else {
-            setCurrentView(view);
-          }
-        }}
-        language={language}
-        showTabs={showHeaderTabs}
       />
 
       {/* Main Content - Conditional Rendering */}
