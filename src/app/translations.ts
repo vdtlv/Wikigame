@@ -16,6 +16,9 @@ export const translations = {
     launch: 'Launch',
     recommendedPrompts: 'Recommended Prompts',
     recommendedPromptsDescription: "Here's what other players have been playing recently",
+    previousGames: 'Previous games',
+    previousGamesDescription: 'Last 5 games on this device',
+    notCompleted: 'Not completed',
     
     // Game Screen
     goal: 'Goal',
@@ -24,6 +27,7 @@ export const translations = {
     timeElapsed: 'Time Elapsed',
     score: 'Score',
     currentPage: 'Current Page',
+    toGoal: 'to goal',
     giveUp: 'Give up',
     leave: 'Leave',
     loading: 'Loading...',
@@ -54,6 +58,9 @@ export const translations = {
     launch: 'Начать',
     recommendedPrompts: 'Рекомендуемые задания',
     recommendedPromptsDescription: 'Вот что играли другие игроки недавно',
+    previousGames: 'Прошедшие игры',
+    previousGamesDescription: 'Тут будут последние 5 игр на этом устройстве',
+    notCompleted: 'Не пройдена',
     
     // Game Screen
     goal: 'Цель',
@@ -62,6 +69,7 @@ export const translations = {
     timeElapsed: 'Время',
     score: 'Очки',
     currentPage: 'Текущая страница',
+    toGoal: 'до цели',
     giveUp: 'Сдаюсь',
     leave: 'Назад',
     loading: 'Подождите немного...',
@@ -82,6 +90,14 @@ export const translations = {
 export const getTranslation = (language: Language, key: keyof typeof translations.en): string => {
   return translations[language][key];
 };
+
+const CLICK_FORMS: Record<Language, Record<string, string>> = {
+  en: { one: 'click', other: 'clicks' },
+  ru: { one: 'клик', few: 'клика', many: 'кликов', other: 'клика' },
+};
+
+export const clicksLabel = (language: Language, n: number) =>
+  `${n} ${CLICK_FORMS[language][new Intl.PluralRules(language).select(n)]}`;
 
 export const POPULAR_ARTICLES = {
   en: [

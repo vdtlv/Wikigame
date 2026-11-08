@@ -50,9 +50,25 @@ function useHashRouter() {
   return { pathname, searchParams, navigate };
 }
 
+const LANGUAGE_KEY = 'wikirunner.language';
+
 export default function App() {
   const { pathname, searchParams, navigate } = useHashRouter();
-  const [language, setLanguage] = useState<Language>('en');
+  const [language, setLanguage] = useState<Language>(() => {
+    try {
+      return localStorage.getItem(LANGUAGE_KEY) === 'ru' ? 'ru' : 'en';
+    } catch {
+      return 'en';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LANGUAGE_KEY, language);
+    } catch {
+      // storage unavailable: the choice just isn't remembered
+    }
+  }, [language]);
   const [user, setUser] = useState<User | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalStep, setAuthModalStep] = useState<'email' | 'code' | 'nickname'>('email');

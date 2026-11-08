@@ -3,7 +3,8 @@ import svgPaths from '../imports/svg-pvsnj56irt';
 import svgPathsNew from '../imports/svg-lrf4eee7ov';
 import Logo from './Logo';
 import { Language, User } from '../App';
-import { getTranslation, POPULAR_ARTICLES, RECOMMENDED_PROMPTS } from '../translations';
+import { getTranslation, clicksLabel, POPULAR_ARTICLES, RECOMMENDED_PROMPTS } from '../translations';
+import { loadPreviousGames } from '../utils/previousGames';
 import MultiplayerScreen from './MultiplayerScreen';
 import HostPartyScreen from './HostPartyScreen';
 import HostLaunchScreen from './HostLaunchScreen';
@@ -53,6 +54,7 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
   const [startArticle, setStartArticle] = useState('');
   const [endArticle, setEndArticle] = useState('');
   const [prompts, setPrompts] = useState<Prompt[]>(RECOMMENDED_PROMPTS[language]);
+  const previousGames = loadPreviousGames(language);
   
   // View state
   const [currentView, setCurrentView] = useState<'quickplay' | 'multiplayer'>(initialView || 'quickplay');
@@ -120,10 +122,11 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
     
     try {
       const response = await fetch(
-        `https://${wikiDomain}/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=8&format=json&origin=*`
+        `https://${wikiDomain}/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=8&namespace=0&redirects=resolve&format=json&origin=*`
       );
       const data = await response.json();
-      return data[1] || []; // Returns array of article titles
+      // Only existing articles come back, redirects already resolved to their targets (which can repeat)
+      return [...new Set<string>(data[1] || [])];
     } catch (error) {
       console.error('Wikipedia search error:', error);
       return [];
@@ -138,51 +141,20 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
     
     try {
       const response = await fetch(
-        `https://${wikiDomain}/w/api.php?action=parse&page=${encodeURIComponent(articleName)}&format=json&origin=*&prop=text`
+        `https://${wikiDomain}/w/api.php?action=query&titles=${encodeURIComponent(articleName)}&redirects=1&format=json&formatversion=2&origin=*`
       );
       const data = await response.json();
-      
-      // If there's an error, the article doesn't exist
-      if (data.error) {
-        return false;
-      }
-      
-      return true;
+      const page = data.query?.pages?.[0];
+      return !!page && !page.missing && !page.invalid;
     } catch (error) {
       console.error('Article validation error:', error);
       return false;
     }
   };
   
-  // Check if article is a redirect and get the actual article
-  const checkRedirect = async (articleName: string): Promise<{ isRedirect: boolean; target?: string }> => {
-    if (!articleName) return { isRedirect: false };
-    
-    const wikiDomain = language === 'ru' ? 'ru.wikipedia.org' : 'en.wikipedia.org';
-    
-    try {
-      const response = await fetch(
-        `https://${wikiDomain}/w/api.php?action=query&titles=${encodeURIComponent(articleName)}&format=json&origin=*&redirects=1`
-      );
-      const data = await response.json();
-      
-      // Check if there were redirects
-      if (data.query && data.query.redirects && data.query.redirects.length > 0) {
-        return { 
-          isRedirect: true, 
-          target: data.query.redirects[0].to 
-        };
-      }
-      
-      return { isRedirect: false };
-    } catch (error) {
-      console.error('Redirect check error:', error);
-      return { isRedirect: false };
-    }
-  };
-  
   // Validate start article when it changes
   useEffect(() => {
+    let cancelled = false;
     const timeoutId = setTimeout(async () => {
       if (!startInputValue) {
         // Empty input
@@ -196,6 +168,7 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
         // Input matches selected article - validate it
         setIsValidating(true);
         const isValid = await validateArticle(startArticle);
+        if (cancelled) return;
         setIsStartValid(isValid);
         setStartErrorMessage(isValid ? '' : language === 'ru' ? 'Статья не найдена в выбранной Википедии' : 'Article not found in selected Wikipedia');
         setIsValidating(false);
@@ -206,6 +179,7 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
           // No dropdown showing, validate what they typed
           setIsValidating(true);
           const isValid = await validateArticle(startInputValue);
+          if (cancelled) return;
           if (isValid) {
             setStartArticle(startInputValue);
             setIsStartValid(true);
@@ -219,11 +193,15 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
       }
     }, 800);
     
-    return () => clearTimeout(timeoutId);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [startArticle, startInputValue, showStartDropdown, language]);
   
   // Validate end article when it changes
   useEffect(() => {
+    let cancelled = false;
     const timeoutId = setTimeout(async () => {
       if (!endInputValue) {
         // Empty input
@@ -237,6 +215,7 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
         // Input matches selected article - validate it
         setIsValidating(true);
         const isValid = await validateArticle(endArticle);
+        if (cancelled) return;
         setIsEndValid(isValid);
         setEndErrorMessage(isValid ? '' : language === 'ru' ? 'Статья не найдена в выбранной Википедии' : 'Article not found in selected Wikipedia');
         setIsValidating(false);
@@ -247,6 +226,7 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
           // No dropdown showing, validate what they typed
           setIsValidating(true);
           const isValid = await validateArticle(endInputValue);
+          if (cancelled) return;
           if (isValid) {
             setEndArticle(endInputValue);
             setIsEndValid(true);
@@ -260,72 +240,51 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
       }
     }, 800);
     
-    return () => clearTimeout(timeoutId);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
   }, [endArticle, endInputValue, showEndDropdown, language]);
   
   // Debounced search for start article
   useEffect(() => {
+    let cancelled = false;
     const timeoutId = setTimeout(async () => {
       if (startInputValue && startInputValue !== startArticle) {
         setIsSearching(true);
         const results = await searchWikipedia(startInputValue);
-        
-        // Filter out redirects and invalid articles
-        const validatedResults = await Promise.all(
-          results.map(async (result) => {
-            const redirectInfo = await checkRedirect(result);
-            // Only include non-redirect articles
-            if (redirectInfo.isRedirect) {
-              return null;
-            }
-            const isValid = await validateArticle(result);
-            return isValid ? result : null;
-          })
-        );
-        
-        // Filter out null values (invalid articles and redirects)
-        const validResults = validatedResults.filter((result): result is string => result !== null);
-        
-        setStartSuggestions(validResults);
-        setShowStartDropdown(validResults.length > 0);
+        if (cancelled) return; // a newer keystroke or a selection superseded this search
+        setStartSuggestions(results);
+        setShowStartDropdown(results.length > 0);
         setIsSearching(false);
       }
     }, 300);
     
-    return () => clearTimeout(timeoutId);
-  }, [startInputValue, startArticle]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [startInputValue, startArticle, language]);
   
   // Debounced search for end article
   useEffect(() => {
+    let cancelled = false;
     const timeoutId = setTimeout(async () => {
       if (endInputValue && endInputValue !== endArticle) {
         setIsSearching(true);
         const results = await searchWikipedia(endInputValue);
-        
-        // Filter out redirects and invalid articles
-        const validatedResults = await Promise.all(
-          results.map(async (result) => {
-            const redirectInfo = await checkRedirect(result);
-            // Only include non-redirect articles
-            if (redirectInfo.isRedirect) {
-              return null;
-            }
-            const isValid = await validateArticle(result);
-            return isValid ? result : null;
-          })
-        );
-        
-        // Filter out null values (invalid articles and redirects)
-        const validResults = validatedResults.filter((result): result is string => result !== null);
-        
-        setEndSuggestions(validResults);
-        setShowEndDropdown(validResults.length > 0);
+        if (cancelled) return; // a newer keystroke or a selection superseded this search
+        setEndSuggestions(results);
+        setShowEndDropdown(results.length > 0);
         setIsSearching(false);
       }
     }, 300);
     
-    return () => clearTimeout(timeoutId);
-  }, [endInputValue, endArticle]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [endInputValue, endArticle, language]);
   
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -401,8 +360,7 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
     
     try {
       // Final validation before launching
-      const startValid = await validateArticle(startArticle);
-      const endValid = await validateArticle(endArticle);
+      const [startValid, endValid] = await Promise.all([validateArticle(startArticle), validateArticle(endArticle)]);
       
       if (!startValid) {
         setIsStartValid(false);
@@ -571,7 +529,7 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
       {showHeaderTabs && currentView === 'quickplay' ? (
         <div className="bg-black relative w-full">
           <div className="flex flex-row items-center justify-center size-full">
-            <div className="box-border content-stretch flex flex-col lg:flex-row gap-[10px] lg:gap-[32px] items-start justify-center lg:px-[48px] lg:py-[16px] relative w-full px-[48px] py-[0px]">
+            <div className="box-border content-stretch flex flex-col gap-[10px] items-start justify-center lg:max-w-[600px] lg:px-0 lg:py-[16px] relative w-full px-[48px] py-[0px]">
               {/* Quick Play Container */}
               <div className="basis-0 lg:grow content-stretch flex flex-col gap-[24px] items-center lg:items-start relative shrink-0 w-full lg:min-w-0 px-[0px] py-[32px]">
                 <div className="content-stretch flex flex-col gap-[8px] items-center lg:items-start not-italic relative shrink-0 w-full text-center lg:text-left">
@@ -781,6 +739,41 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
                   <div aria-hidden="true" className="absolute border border-neutral-100 border-solid inset-0 pointer-events-none rounded-[8px]" />
                 </button>
               </div>
+
+              {/* Previous Games Container */}
+              {previousGames.length > 0 && (
+                <div className="content-stretch flex flex-col gap-[24px] items-center lg:items-start relative shrink-0 w-full px-[0px] py-[32px]">
+                  <div className="content-stretch flex flex-col gap-[8px] items-center lg:items-start not-italic relative shrink-0 w-full text-center lg:text-left">
+                    <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold leading-[1.2] relative shrink-0 text-[24px] text-white tracking-[-0.48px] w-full">{getTranslation(language, 'previousGames')}</p>
+                    <p className="font-['Inter:Regular',sans-serif] font-normal leading-[1.4] relative shrink-0 text-[16px] text-[rgba(255,255,255,0.7)] w-full">{getTranslation(language, 'previousGamesDescription')}</p>
+                  </div>
+
+                  <div className="content-stretch flex flex-col gap-[16px] items-start relative shrink-0 w-full">
+                    {previousGames.map((game, index) => (
+                      <div key={index} className="w-full">
+                        <div className="content-stretch flex flex-col lg:flex-row lg:justify-between items-start lg:items-center gap-[16px] relative shrink-0 w-full">
+                          <div className="flex flex-col gap-[4px] font-['Inter:Regular',sans-serif] font-normal not-italic leading-[1.4] min-w-0">
+                            <p className="text-[16px] text-white">{game.start} → {game.end}</p>
+                            <p className="text-[14px] text-[rgba(255,255,255,0.7)]">
+                              {game.won ? `${clicksLabel(language, game.clicks)} · ${game.time}` : getTranslation(language, 'notCompleted')}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleLaunchPrompt(game)}
+                            className="bg-[#303030] relative rounded-[8px] shrink-0 w-full lg:w-auto hover:bg-[#404040] transition-colors"
+                          >
+                            <div className="box-border content-stretch flex gap-[8px] items-center justify-center overflow-clip p-[12px] lg:p-[8px] relative rounded-[inherit]">
+                              <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[16px] text-nowrap text-white whitespace-pre">{getTranslation(language, 'playAgain')}</p>
+                            </div>
+                            <div aria-hidden="true" className="absolute border border-[#949494] border-solid inset-0 pointer-events-none rounded-[8px]" />
+                          </button>
+                        </div>
+                        {index < previousGames.length - 1 && <div className="h-px bg-[#444444] w-full mt-[16px]" />}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Recommended Prompts Container */}
               <div className="basis-0 lg:grow content-stretch flex flex-col gap-[24px] items-center lg:items-start relative shrink-0 w-full lg:min-w-0 px-[0px] py-[32px]">

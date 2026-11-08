@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Language, User } from '../App';
-import { getTranslation } from '../translations';
+import { getTranslation, clicksLabel } from '../translations';
 import LaunchScreen from './LaunchScreen';
 import WinScreen from './WinScreen';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { createDistanceFinder, wikiNeighbours } from '../utils/wikiDistance';
+import { savePreviousGame } from '../utils/previousGames';
 
 interface GameScreenProps {
   startArticle: string;
@@ -29,6 +31,30 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const startTimeRef = useRef(Date.now());
   const visitCounterRef = useRef(0);
+  // Clicks to the goal: from the start page and from the current page; undefined while computing, null if unknown
+  const [shortest, setShortest] = useState<number | null>();
+  const [distance, setDistance] = useState<number | null>();
+  const distanceFromRef = useRef<ReturnType<typeof createDistanceFinder>>();
+  const distanceAbortRef = useRef<AbortController>();
+
+  const measureDistance = (articleName: string, onDone: (d: number | null) => void) => {
+    distanceAbortRef.current?.abort();
+    const controller = new AbortController();
+    distanceAbortRef.current = controller;
+    distanceFromRef.current?.(articleName, controller.signal).then(d => {
+      if (!controller.signal.aborted) onDone(d);
+    });
+  };
+
+  const handleGiveUp = () => {
+    savePreviousGame({ start: startArticle, end: endArticle, language, clicks: linksClicked, time: formatTime(timeElapsed), won: false });
+    onGiveUp();
+  };
+
+  // Dot position on the indicator: centre at the start, right edge at the goal, left edge at twice the start distance
+  const proximity = shortest && distance != null
+    ? Math.min(1, Math.max(0, 0.5 + (shortest - distance) / (2 * shortest)))
+    : null;
 
   // Fetch Wikipedia article content
   const fetchArticle = async (articleName: string) => {
@@ -222,7 +248,16 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
     console.log('🎮 Game started! Start article:', startArticle);
     console.log(`${visitCounterRef.current}: https://${wikiDomain}/wiki/${encodeURIComponent(startArticle.replace(/ /g, '_'))}`);
     fetchArticle(startArticle);
-  }, [startArticle, language]);
+
+    distanceFromRef.current = createDistanceFinder(endArticle, wikiNeighbours(language));
+    setShortest(undefined);
+    setDistance(undefined);
+    measureDistance(startArticle, d => {
+      setShortest(d);
+      setDistance(d);
+    });
+    return () => distanceAbortRef.current?.abort();
+  }, [startArticle, endArticle, language]);
 
   // Handle link clicks in iframe
   useEffect(() => {
@@ -259,9 +294,18 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
         // Update current page and fetch new article
         setCurrentPage(articleName);
         fetchArticle(articleName);
-        
+
         // Check if goal reached
-        if (articleName.toLowerCase() === endArticle.toLowerCase()) {
+        if (articleName.toLowerCase() !== endArticle.toLowerCase()) {
+          setDistance(undefined);
+          measureDistance(articleName, setDistance);
+        } else {
+          distanceAbortRef.current?.abort();
+          setDistance(0);
+          savePreviousGame({
+            start: startArticle, end: endArticle, language,
+            clicks: visitCounterRef.current, time: formatTime(Date.now() - startTimeRef.current), won: true,
+          });
           console.log('🎉 Goal reached!');
           
           // Save result to party if this is a multiplayer game
@@ -348,7 +392,7 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [currentPage, endArticle, language, onWin, navigationPath, partyUid, user]);
+  }, [currentPage, startArticle, endArticle, language, onWin, navigationPath, partyUid, user]);
 
   // Timer effect - simple 1ms updates
   useEffect(() => {
@@ -422,12 +466,6 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
                     <p className="[white-space-collapse:collapse] font-['Inter:Semi_Bold',sans-serif] font-semibold h-[19px] overflow-ellipsis overflow-hidden relative shrink-0 text-white w-full">{endArticle}</p>
                   </div>
 
-                  {/* Links Clicked */}
-                  <div className="content-stretch flex flex-col gap-[4px] items-start leading-[normal] not-italic relative shrink-0 text-[16px] text-nowrap whitespace-pre">
-                    <p className="font-['Inter:Regular',sans-serif] font-normal relative shrink-0 text-[#757575]">{getTranslation(language, 'linksClicked')}</p>
-                    <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold relative shrink-0 text-white transition-all duration-200" key={linksClicked}>{linksClicked}</p>
-                  </div>
-
                   {/* Time Elapsed */}
                   <div className="content-stretch flex flex-col gap-[4px] items-start leading-[normal] not-italic relative shrink-0 text-[16px] text-nowrap whitespace-pre w-[120px]">
                     <p className="font-['Inter:Regular',sans-serif] font-normal relative shrink-0 text-[#757575]">{getTranslation(language, 'timeElapsed')}</p>
@@ -441,16 +479,20 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
                   </div>
                 </div>
 
-                {/* Give Up Button */}
-                <button 
-                  onClick={onGiveUp}
-                  className="bg-[#ec221f] relative rounded-[8px] shrink-0 hover:bg-[#d11f1c] transition-colors"
-                >
-                  <div className="box-border content-stretch flex gap-[8px] items-center justify-center overflow-clip p-[12px] relative rounded-[inherit]">
-                    <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[#fee9e7] text-[16px] text-nowrap whitespace-pre">{getTranslation(language, 'giveUp')}</p>
-                  </div>
-                  <div aria-hidden="true" className="absolute border border-[#c00f0c] border-solid inset-0 pointer-events-none rounded-[8px]" />
-                </button>
+                <div className="flex gap-[16px] items-center shrink-0">
+                  <ClicksPill clicks={linksClicked} proximity={proximity} distance={distance} language={language} />
+
+                  {/* Give Up Button */}
+                  <button 
+                    onClick={handleGiveUp}
+                    className="bg-[#ec221f] relative rounded-[8px] shrink-0 hover:bg-[#d11f1c] transition-colors"
+                  >
+                    <div className="box-border content-stretch flex gap-[8px] items-center justify-center overflow-clip p-[12px] relative rounded-[inherit]">
+                      <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[#fee9e7] text-[16px] text-nowrap whitespace-pre">{getTranslation(language, 'giveUp')}</p>
+                    </div>
+                    <div aria-hidden="true" className="absolute border border-[#c00f0c] border-solid inset-0 pointer-events-none rounded-[8px]" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -464,9 +506,12 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
                   onClick={() => setIsFooterExpanded(!isFooterExpanded)}
                   className="content-stretch flex items-center justify-between relative shrink-0 w-full"
                 >
-                  <div className="content-stretch flex flex-col gap-[4px] h-[42px] items-start leading-[normal] not-italic relative shrink-0 text-[16px] text-nowrap w-[268px]">
+                  <div className="content-stretch flex flex-col gap-[4px] h-[42px] items-start leading-[normal] min-w-0 flex-1 not-italic relative text-[16px] text-nowrap">
                     <p className="font-['Inter:Regular',sans-serif] font-normal relative shrink-0 text-[#757575] whitespace-pre text-left">{getTranslation(language, 'goal')}</p>
                     <p className="[white-space-collapse:collapse] font-['Inter:Semi_Bold',sans-serif] font-semibold h-[19px] overflow-ellipsis overflow-hidden relative shrink-0 text-white w-full text-left">{endArticle}</p>
+                  </div>
+                  <div className="ml-[12px] mr-[16px] shrink-0">
+                    <ClicksPill clicks={linksClicked} proximity={proximity} distance={distance} language={language} />
                   </div>
                   <div className="bg-[#2c2c2c] relative rounded-[32px] shrink-0">
                     <div className="box-border content-stretch flex items-center justify-center overflow-clip p-[8px] relative rounded-[inherit]">
@@ -488,12 +533,6 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
                 {isFooterExpanded && (
                   <>
                     <div className="content-stretch flex gap-[24px] items-center relative shrink-0 w-full">
-                      {/* Links Clicked */}
-                      <div className="content-stretch flex flex-col gap-[4px] items-start leading-[normal] not-italic relative shrink-0 text-[16px] text-nowrap whitespace-pre">
-                        <p className="font-['Inter:Regular',sans-serif] font-normal relative shrink-0 text-[#757575]">{getTranslation(language, 'linksClicked')}</p>
-                        <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold relative shrink-0 text-white">{linksClicked}</p>
-                      </div>
-
                       {/* Time Elapsed */}
                       <div className="content-stretch flex flex-col gap-[4px] items-start leading-[normal] not-italic relative shrink-0 text-[16px] text-nowrap whitespace-pre">
                         <p className="font-['Inter:Regular',sans-serif] font-normal relative shrink-0 text-[#757575]">{getTranslation(language, 'timeElapsed')}</p>
@@ -509,7 +548,7 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
 
                     {/* Give Up Button */}
                     <button 
-                      onClick={onGiveUp}
+                      onClick={handleGiveUp}
                       className="bg-[#ec221f] relative rounded-[8px] shrink-0 w-full hover:bg-[#d11f1c] transition-colors"
                     >
                       <div className="flex flex-row items-center justify-center overflow-clip rounded-[inherit] size-full">
@@ -543,5 +582,44 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
         </div>
       )}
     </>
+  );
+}
+const PROXIMITY_BORDER =
+  'linear-gradient(#000, #000) padding-box, ' +
+  'linear-gradient(to bottom, transparent 40%, rgba(0, 0, 0, 0.7)) border-box, ' +
+  'linear-gradient(90deg, #e0533d, #f5b74a 35%, #c8f56b 65%, #5ad16b) border-box';
+
+// Click counter wrapped in the proximity indicator. When the distance is unknown for over a second,
+// the dot scales away and the coloured border fades to the plain grey one underneath.
+function ClicksPill({ clicks, proximity, distance, language }: {
+  clicks: number;
+  proximity: number | null;
+  distance: number | null | undefined;
+  language: Language;
+}) {
+  const label = clicksLabel(language, clicks);
+  const known = proximity !== null;
+  const lastProximity = useRef(0.5);
+  if (known) lastProximity.current = proximity;
+  const fade = known ? 'delay-0' : 'delay-1000';
+
+  return (
+    <div
+      role="status"
+      aria-label={distance != null ? `${label}, ${getTranslation(language, 'toGoal')}: ${distance}` : label}
+      className="isolate relative shrink-0 rounded-full border-2 border-solid border-[#444444] px-[14px] py-[8px]"
+    >
+      <div
+        aria-hidden="true"
+        className={`absolute inset-[-2px] -z-10 rounded-full border-2 border-solid border-transparent transition-opacity duration-500 ${fade} ${known ? 'opacity-100' : 'opacity-0'}`}
+        style={{ background: PROXIMITY_BORDER }}
+      />
+      <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic text-[16px] text-white text-nowrap whitespace-pre">{label}</p>
+      <div
+        aria-hidden="true"
+        className={`absolute top-[-8px] size-[14px] -translate-x-1/2 rounded-full border-2 border-solid border-black bg-white transition-[left,scale] duration-500 ${fade} ${known ? 'scale-100' : 'scale-0'}`}
+        style={{ left: `calc(16px + ${lastProximity.current} * (100% - 32px))` }}
+      />
+    </div>
   );
 }
