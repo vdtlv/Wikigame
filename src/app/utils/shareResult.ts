@@ -98,24 +98,33 @@ function drawResult(game: PreviousGame): Promise<Blob | null> {
   return new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
 }
 
-// Shares the result card and a challenge link; copies the text where sharing is unavailable
-export async function shareResult(game: PreviousGame, language: Language): Promise<'shared' | 'copied' | 'cancelled'> {
+export interface PreparedShare {
+  text: string;
+  files: File[];
+}
+
+// Draws the result card ahead of the click: mobile browsers only open the share sheet
+// while the tap is still fresh, so nothing slow may run between the tap and navigator.share
+export async function prepareShare(game: PreviousGame, language: Language): Promise<PreparedShare> {
   const url = `${location.origin}${location.pathname}#${gamePath(game.start, game.end, game.language)}`;
   const text = `${getTranslation(language, 'shareText')} ${url}`;
   const blob = await drawResult(game);
-  const files = blob ? [new File([blob], 'wikirunner.png', { type: 'image/png' })] : [];
+  return { text, files: blob ? [new File([blob], 'wikirunner.png', { type: 'image/png' })] : [] };
+}
 
-  try {
-    if (files.length && navigator.canShare?.({ files })) {
-      await navigator.share({ files, text });
+// Opens the system share sheet with the card and a challenge link; copies the text where sharing is unavailable
+export async function shareResult({ text, files }: PreparedShare): Promise<'shared' | 'copied' | 'cancelled'> {
+  const attempts: ShareData[] = [];
+  if (files.length && navigator.canShare?.({ files })) attempts.push({ files, text });
+  if (navigator.share) attempts.push({ text });
+
+  for (const data of attempts) {
+    try {
+      await navigator.share(data);
       return 'shared';
+    } catch (error) {
+      if ((error as Error).name === 'AbortError') return 'cancelled'; // user closed the share sheet
     }
-    if (navigator.share) {
-      await navigator.share({ text });
-      return 'shared';
-    }
-  } catch (error) {
-    if ((error as Error).name === 'AbortError') return 'cancelled'; // user closed the share sheet
   }
 
   try {

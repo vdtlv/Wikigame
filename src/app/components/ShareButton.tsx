@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Language } from '../App';
 import { getTranslation } from '../translations';
 import type { PreviousGame } from '../utils/previousGames';
-import { shareResult } from '../utils/shareResult';
+import { prepareShare, shareResult, type PreparedShare } from '../utils/shareResult';
 
 // Share CTA (win screen) or icon-only button (previous games)
 export default function ShareButton({ game, language, iconOnly = false }: {
@@ -13,8 +13,21 @@ export default function ShareButton({ game, language, iconOnly = false }: {
   const [copied, setCopied] = useState(false);
   const label = getTranslation(language, copied ? 'linkCopied' : 'share');
 
+  // The card is drawn on mount so a tap can open the share sheet right away
+  const prepared = useRef<PreparedShare | null>(null);
+  const preparing = useRef<Promise<PreparedShare> | null>(null);
+  useEffect(() => {
+    prepared.current = null;
+    const pending = prepareShare(game, language);
+    preparing.current = pending;
+    pending.then(data => {
+      if (preparing.current === pending) prepared.current = data;
+    });
+  }, [game.start, game.end, game.language, game.clicks, game.time, game.score, language]);
+
   const handleClick = async () => {
-    if (await shareResult(game, language) === 'copied') {
+    const data = prepared.current ?? await (preparing.current ?? prepareShare(game, language));
+    if (await shareResult(data) === 'copied') {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
