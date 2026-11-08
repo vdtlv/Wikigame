@@ -5,11 +5,13 @@ import logoPaths from '../imports/svg-3h6239ug75';
 
 export const SCORE_COLOR = '#fbbf24';
 
-// Titles with non-ASCII letters (Cyrillic, …) go into links as base64url under `start64`/`end64`
+// Titles stay readable in links: spaces become `_` (as on Wikipedia), letters of any script are kept as is,
+// and only characters that would break the link are percent-encoded
 const encodeTitle = (title: string) =>
-  btoa(String.fromCharCode(...new TextEncoder().encode(title))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  Array.from(title.replace(/ /g, '_'), ch => (/[\p{L}\p{N}\p{M}_\-.~()',]/u.test(ch) ? ch : encodeURIComponent(ch))).join('');
 
-const decodeTitle = (value: string) => {
+// Links shared before readable titles used base64url under `start64`/`end64`
+const decodeBase64Title = (value: string) => {
   try {
     const binary = atob(value.replace(/-/g, '+').replace(/_/g, '/'));
     return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(binary, c => c.charCodeAt(0)));
@@ -18,17 +20,15 @@ const decodeTitle = (value: string) => {
   }
 };
 
-const titleParam = (key: 'start' | 'end', title: string) =>
-  /^[\x20-\x7e]*$/.test(title) ? `${key}=${encodeURIComponent(title)}` : `${key}64=${encodeTitle(title)}`;
-
 export const readTitle = (params: URLSearchParams, key: 'start' | 'end') => {
   const encoded = params.get(`${key}64`);
-  return encoded !== null ? decodeTitle(encoded) : params.get(key) || '';
+  if (encoded !== null) return decodeBase64Title(encoded);
+  return (params.get(key) || '').replace(/_/g, ' ');
 };
 
-export const titleParams = (start: string, end: string) => `${titleParam('start', start)}&${titleParam('end', end)}`;
+export const titleParams = (start: string, end: string) => `start=${encodeTitle(start)}&end=${encodeTitle(end)}`;
 
-// Shareable link: #/game?start=…&end=…&lang=… (or start64/end64)
+// Shareable link: #/game?start=Вторая_мировая_война&end=…&lang=…
 export const gamePath = (start: string, end: string, language: Language) =>
   `/game?${titleParams(start, end)}&lang=${language}`;
 
