@@ -5,6 +5,9 @@ import Logo from './Logo';
 import { Language, User } from '../App';
 import { getTranslation, clicksLabel, POPULAR_ARTICLES, RECOMMENDED_PROMPTS } from '../translations';
 import { loadPreviousGames } from '../utils/previousGames';
+import { SCORE_COLOR } from '../utils/shareResult';
+import ShareButton from './ShareButton';
+import { articleExists } from '../utils/wikiArticle';
 import MultiplayerScreen from './MultiplayerScreen';
 import HostPartyScreen from './HostPartyScreen';
 import HostLaunchScreen from './HostLaunchScreen';
@@ -24,6 +27,8 @@ interface SetupScreenProps {
   initialView?: 'quickplay' | 'multiplayer';
   onNavigateToMultiplayer?: () => void;
   onNavigateToHome?: () => void;
+  initialStart?: string; // prefilled from a game link that failed validation
+  initialEnd?: string;
 }
 
 interface Prompt {
@@ -50,7 +55,8 @@ function getRandomArticle(language: Language): string {
   return articles[Math.floor(Math.random() * articles.length)];
 }
 
-export default function SetupScreen({ onStartGame, language, onLanguageChange, user, onShowAuth, onShowNickname, onLogout, onJoinPartyLobby, initialView, onNavigateToMultiplayer, onNavigateToHome }: SetupScreenProps) {
+export default function SetupScreen({ onStartGame, language, onLanguageChange, user, onShowAuth, onShowNickname, onLogout, onJoinPartyLobby, initialView, onNavigateToMultiplayer, onNavigateToHome, initialStart, initialEnd }: SetupScreenProps) {
+  const initialArticles = useRef({ start: initialStart, end: initialEnd });
   const [startArticle, setStartArticle] = useState('');
   const [endArticle, setEndArticle] = useState('');
   const [prompts, setPrompts] = useState<Prompt[]>(RECOMMENDED_PROMPTS[language]);
@@ -98,14 +104,15 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
   const endDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Set random articles on mount and language change
-    const start = getRandomArticle(language);
-    let end = getRandomArticle(language);
+    // Set random articles on mount and language change; articles from a link are used once, on mount
+    const start = initialArticles.current.start || getRandomArticle(language);
+    let end = initialArticles.current.end || getRandomArticle(language);
     
     // Ensure start and end are different
-    while (end === start && POPULAR_ARTICLES[language].length > 1) {
+    while (!initialArticles.current.end && end === start && POPULAR_ARTICLES[language].length > 1) {
       end = getRandomArticle(language);
     }
+    initialArticles.current = { start: undefined, end: undefined };
     
     setStartArticle(start);
     setEndArticle(end);
@@ -134,23 +141,7 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
   };
   
   // Validate if article exists on Wikipedia
-  const validateArticle = async (articleName: string): Promise<boolean> => {
-    if (!articleName) return false;
-    
-    const wikiDomain = language === 'ru' ? 'ru.wikipedia.org' : 'en.wikipedia.org';
-    
-    try {
-      const response = await fetch(
-        `https://${wikiDomain}/w/api.php?action=query&titles=${encodeURIComponent(articleName)}&redirects=1&format=json&formatversion=2&origin=*`
-      );
-      const data = await response.json();
-      const page = data.query?.pages?.[0];
-      return !!page && !page.missing && !page.invalid;
-    } catch (error) {
-      console.error('Article validation error:', error);
-      return false;
-    }
-  };
+  const validateArticle = (articleName: string) => articleExists(language, articleName);
   
   // Validate start article when it changes
   useEffect(() => {
@@ -755,18 +746,28 @@ export default function SetupScreen({ onStartGame, language, onLanguageChange, u
                           <div className="flex flex-col gap-[4px] font-['Inter:Regular',sans-serif] font-normal not-italic leading-[1.4] min-w-0">
                             <p className="text-[16px] text-white">{game.start} → {game.end}</p>
                             <p className="text-[14px] text-[rgba(255,255,255,0.7)]">
-                              {game.won ? `${clicksLabel(language, game.clicks)} · ${game.time}` : getTranslation(language, 'notCompleted')}
+                              {game.won ? (
+                                <>
+                                  {game.score !== undefined && (
+                                    <span style={{ color: SCORE_COLOR }}>{getTranslation(language, 'score')}: {game.score} · </span>
+                                  )}
+                                  {clicksLabel(language, game.clicks)} · {game.time}
+                                </>
+                              ) : getTranslation(language, 'notCompleted')}
                             </p>
                           </div>
+                          <div className="flex gap-[8px] items-center shrink-0 w-full lg:w-auto">
+                          {game.won && <ShareButton game={game} language={language} iconOnly />}
                           <button
                             onClick={() => handleLaunchPrompt(game)}
-                            className="bg-[#303030] relative rounded-[8px] shrink-0 w-full lg:w-auto hover:bg-[#404040] transition-colors"
+                            className="bg-[#303030] relative rounded-[8px] grow lg:grow-0 hover:bg-[#404040] transition-colors"
                           >
                             <div className="box-border content-stretch flex gap-[8px] items-center justify-center overflow-clip p-[12px] lg:p-[8px] relative rounded-[inherit]">
                               <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic relative shrink-0 text-[16px] text-nowrap text-white whitespace-pre">{getTranslation(language, 'playAgain')}</p>
                             </div>
                             <div aria-hidden="true" className="absolute border border-[#949494] border-solid inset-0 pointer-events-none rounded-[8px]" />
                           </button>
+                          </div>
                         </div>
                         {index < previousGames.length - 1 && <div className="h-px bg-[#444444] w-full mt-[16px]" />}
                       </div>

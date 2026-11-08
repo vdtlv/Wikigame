@@ -7,6 +7,13 @@ export interface PreviousGame {
   clicks: number;
   time: string; // formatted like the in-game timer
   won: boolean;
+  score?: number; // only for won games; missing in games saved before scores were stored
+}
+
+// Same formula the win screen shows
+export function gameScore(clicks: number, ms: number): number {
+  const denominator = (ms / 1000) * 0.5 + clicks * 5;
+  return denominator > 0 ? Math.floor(10000 / denominator) : 9999;
 }
 
 const KEY = 'wikirunner.previousGames';

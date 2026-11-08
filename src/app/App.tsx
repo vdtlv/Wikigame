@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import SetupScreen from './components/SetupScreen';
+import { articleExists } from './utils/wikiArticle';
+import { gamePath } from './utils/shareResult';
 import GameScreen from './components/GameScreen';
 import WinScreen from './components/WinScreen';
 import AuthModal from './components/AuthModal';
@@ -52,9 +54,13 @@ function useHashRouter() {
 
 const LANGUAGE_KEY = 'wikirunner.language';
 
+const isLanguage = (value: string | null): value is Language => value === 'en' || value === 'ru';
+
 export default function App() {
   const { pathname, searchParams, navigate } = useHashRouter();
   const [language, setLanguage] = useState<Language>(() => {
+    const linkLanguage = searchParams.get('lang');
+    if (isLanguage(linkLanguage)) return linkLanguage;
     try {
       return localStorage.getItem(LANGUAGE_KEY) === 'ru' ? 'ru' : 'en';
     } catch {
@@ -69,6 +75,46 @@ export default function App() {
       // storage unavailable: the choice just isn't remembered
     }
   }, [language]);
+
+  // A link's language wins over the saved one
+  const linkLanguage = searchParams.get('lang');
+  useEffect(() => {
+    if (isLanguage(linkLanguage)) setLanguage(linkLanguage);
+  }, [linkLanguage]);
+
+  // Solo game links are checked after opening; a bad link falls back to the setup screen with the fields filled in
+  const [checkedGame, setCheckedGame] = useState<string | null>(null);
+  const gameLink = pathname === '/game' && !searchParams.get('party')
+    ? {
+        start: searchParams.get('start') || '',
+        end: searchParams.get('end') || '',
+        language: isLanguage(linkLanguage) ? linkLanguage : language,
+      }
+    : null;
+  const gameKey = gameLink && gamePath(gameLink.start, gameLink.end, gameLink.language);
+  useEffect(() => {
+    if (!gameLink || gameKey === checkedGame) return;
+    let cancelled = false;
+    const { start, end, language: lang } = gameLink;
+    Promise.all([articleExists(lang, start), articleExists(lang, end)]).then(([startOk, endOk]) => {
+      if (cancelled) return;
+      if (startOk && endOk && start.toLowerCase() !== end.toLowerCase()) {
+        setCheckedGame(gameKey);
+      } else {
+        navigate(`/?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&lang=${lang}`);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [gameKey, checkedGame]);
+
+  // Games started from the setup screen are already validated
+  const startSoloGame = (start: string, end: string) => {
+    const path = gamePath(start, end, language);
+    setCheckedGame(path);
+    navigate(path);
+  };
   const [user, setUser] = useState<User | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalStep, setAuthModalStep] = useState<'email' | 'code' | 'nickname'>('email');
@@ -365,9 +411,9 @@ export default function App() {
     if (pathname === '/' || pathname === '') {
       return (
         <SetupScreen 
-          onStartGame={(start, end) => {
-            navigate(`/game?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
-          }}
+          onStartGame={startSoloGame}
+          initialStart={searchParams.get('start') || undefined}
+          initialEnd={searchParams.get('end') || undefined}
           language={language}
           onLanguageChange={setLanguage}
           user={user}
@@ -386,9 +432,7 @@ export default function App() {
     if (pathname === '/multiplayer') {
       return (
         <SetupScreen 
-          onStartGame={(start, end) => {
-            navigate(`/game?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
-          }}
+          onStartGame={startSoloGame}
           language={language}
           onLanguageChange={setLanguage}
           user={user}
@@ -409,6 +453,9 @@ export default function App() {
       const startArticle = searchParams.get('start') || '';
       const endArticle = searchParams.get('end') || '';
       const partyUid = searchParams.get('party') || undefined;
+      if (gameKey !== null && gameKey !== checkedGame) {
+        return <div className="bg-black size-full" />; // checking the link's articles
+      }
       
       return (
         <GameScreen

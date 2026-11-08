@@ -37,6 +37,9 @@ export const translations = {
     youReached: 'You reached',
     from: 'from',
     playAgain: 'Play Again',
+    share: 'Share',
+    linkCopied: 'Link copied',
+    shareText: 'Try to win in WikiRunner',
     youWon: 'You Won!',
     
     // Language names
@@ -79,6 +82,9 @@ export const translations = {
     youReached: 'Вы добрались до',
     from: 'из',
     playAgain: 'Хочу еще раз',
+    share: 'Поделиться',
+    linkCopied: 'Ссылка скопирована',
+    shareText: 'Попробуй выиграть в WikiRunner',
     youWon: 'Вы выиграли!',
     
     // Language names

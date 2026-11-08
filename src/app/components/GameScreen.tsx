@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Language, User } from '../App';
 import { getTranslation, clicksLabel } from '../translations';
 import LaunchScreen from './LaunchScreen';
 import WinScreen from './WinScreen';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { createDistanceFinder, wikiNeighbours } from '../utils/wikiDistance';
-import { savePreviousGame } from '../utils/previousGames';
+import { savePreviousGame, gameScore } from '../utils/previousGames';
 
 interface GameScreenProps {
   startArticle: string;
@@ -22,6 +22,7 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
   const [linksClicked, setLinksClicked] = useState(0);
   const [timeElapsed, setTimeElapsed] = useState(0);
   const [showWinDialog, setShowWinDialog] = useState(false);
+  const [finalMs, setFinalMs] = useState(0); // time at the winning click, so the win screen and history agree
   const [articleContent, setArticleContent] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -302,9 +303,11 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
         } else {
           distanceAbortRef.current?.abort();
           setDistance(0);
+          const winMs = Date.now() - startTimeRef.current;
+          setFinalMs(winMs);
           savePreviousGame({
-            start: startArticle, end: endArticle, language,
-            clicks: visitCounterRef.current, time: formatTime(Date.now() - startTimeRef.current), won: true,
+            start: startArticle, end: endArticle, language, clicks: visitCounterRef.current,
+            time: formatTime(winMs), won: true, score: gameScore(visitCounterRef.current, winMs),
           });
           console.log('🎉 Goal reached!');
           
@@ -520,7 +523,7 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
                           {isFooterExpanded ? (
                             <path d="M5 7.5L10 12.5L15 7.5" stroke="#F5F5F5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" />
                           ) : (
-                            <path d="M18 15L12 9L6 15" stroke="#F5F5F5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" />
+                            <path d="M5 12.5L10 7.5L15 12.5" stroke="#F5F5F5" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" />
                           )}
                         </svg>
                       </div>
@@ -571,8 +574,8 @@ export default function GameScreen({ startArticle, endArticle, onWin, onGiveUp, 
                 startArticle={startArticle}
                 endArticle={endArticle}
                 linksClicked={linksClicked}
-                timeElapsed={formatTime(timeElapsed)}
-                timeElapsedMs={timeElapsed}
+                timeElapsed={formatTime(finalMs)}
+                timeElapsedMs={finalMs}
                 navigationPath={navigationPath}
                 onPlayAgain={onGiveUp}
                 language={language}
@@ -602,6 +605,10 @@ function ClicksPill({ clicks, proximity, distance, language }: {
   const lastProximity = useRef(0.5);
   if (known) lastProximity.current = proximity;
   const fade = known ? 'delay-0' : 'delay-1000';
+  // Width follows the label smoothly: measure the new text, animate the wrapper to it
+  const labelRef = useRef<HTMLParagraphElement>(null);
+  const [labelWidth, setLabelWidth] = useState<number>();
+  useLayoutEffect(() => setLabelWidth(labelRef.current?.offsetWidth), [label]);
 
   return (
     <div
@@ -614,7 +621,9 @@ function ClicksPill({ clicks, proximity, distance, language }: {
         className={`absolute inset-[-2px] -z-10 rounded-full border-2 border-solid border-transparent transition-opacity duration-500 ${fade} ${known ? 'opacity-100' : 'opacity-0'}`}
         style={{ background: PROXIMITY_BORDER }}
       />
-      <p className="font-['Inter:Regular',sans-serif] font-normal leading-none not-italic text-[16px] text-white text-nowrap whitespace-pre">{label}</p>
+      <div className="overflow-hidden transition-[width] duration-300 ease-out" style={{ width: labelWidth }}>
+        <p ref={labelRef} className="w-max font-['Inter:Regular',sans-serif] font-normal leading-none not-italic text-[16px] text-white text-nowrap whitespace-pre">{label}</p>
+      </div>
       <div
         aria-hidden="true"
         className={`absolute top-[-8px] size-[14px] -translate-x-1/2 rounded-full border-2 border-solid border-black bg-white transition-[left,scale] duration-500 ${fade} ${known ? 'scale-100' : 'scale-0'}`}

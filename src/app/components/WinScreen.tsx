@@ -1,5 +1,8 @@
 import { Language } from '../App';
 import { getTranslation } from '../translations';
+import { gameScore } from '../utils/previousGames';
+import { SCORE_COLOR } from '../utils/shareResult';
+import ShareButton from './ShareButton';
 
 interface WinScreenProps {
   startArticle: string;
@@ -22,9 +25,7 @@ export default function WinScreen({
   onPlayAgain,
   language
 }: WinScreenProps) {
-  const seconds = timeElapsedMs / 1000;
-  const denominator = seconds * 0.5 + linksClicked * 5;
-  const score = denominator > 0 ? Math.floor(10000 / denominator) : 9999;
+  const score = gameScore(linksClicked, timeElapsedMs);
 
   return (
     <div className="bg-white content-stretch flex flex-col items-start relative size-full">
@@ -59,7 +60,7 @@ export default function WinScreen({
                         <p className="font-['Inter:Regular',sans-serif] font-normal relative shrink-0 text-[#757575]">
                           {getTranslation(language, 'score')}
                         </p>
-                        <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold relative shrink-0 text-[#fbbf24] text-[16px]">
+                        <p className="font-['Inter:Semi_Bold',sans-serif] font-semibold relative shrink-0 text-[16px]" style={{ color: SCORE_COLOR }}>
                           {score}
                         </p>
                       </div>
@@ -109,7 +110,11 @@ export default function WinScreen({
       {/* Footer */}
       <div className="bg-black relative shrink-0 w-full">
         <div className="flex flex-row items-center size-full">
-          <div className="box-border content-stretch flex items-center justify-center pb-[16px] pt-0 px-[16px] lg:px-[48px] relative w-full">
+          <div className="box-border content-stretch flex gap-[8px] items-center justify-center pb-[16px] pt-0 px-[16px] lg:px-[48px] relative w-full">
+            <ShareButton
+              game={{ start: startArticle, end: endArticle, language, clicks: linksClicked, time: timeElapsed, won: true, score }}
+              language={language}
+            />
             <button
               onClick={onPlayAgain}
               className="bg-[#2c2c2c] relative rounded-[8px] shrink-0 hover:bg-[#3c3c3c] transition-colors"
