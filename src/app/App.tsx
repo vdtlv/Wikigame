@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import SetupScreen from './components/SetupScreen';
 import { articleExists } from './utils/wikiArticle';
-import { gamePath } from './utils/shareResult';
+import { gamePath, readTitle, titleParams } from './utils/shareResult';
 import GameScreen from './components/GameScreen';
 import WinScreen from './components/WinScreen';
 import AuthModal from './components/AuthModal';
@@ -86,8 +86,8 @@ export default function App() {
   const [checkedGame, setCheckedGame] = useState<string | null>(null);
   const gameLink = pathname === '/game' && !searchParams.get('party')
     ? {
-        start: searchParams.get('start') || '',
-        end: searchParams.get('end') || '',
+        start: readTitle(searchParams, 'start'),
+        end: readTitle(searchParams, 'end'),
         language: isLanguage(linkLanguage) ? linkLanguage : language,
       }
     : null;
@@ -101,7 +101,7 @@ export default function App() {
       if (startOk && endOk && start.toLowerCase() !== end.toLowerCase()) {
         setCheckedGame(gameKey);
       } else {
-        navigate(`/?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&lang=${lang}`);
+        navigate(`/?${titleParams(start, end)}&lang=${lang}`);
       }
     });
     return () => {
@@ -412,8 +412,8 @@ export default function App() {
       return (
         <SetupScreen 
           onStartGame={startSoloGame}
-          initialStart={searchParams.get('start') || undefined}
-          initialEnd={searchParams.get('end') || undefined}
+          initialStart={readTitle(searchParams, 'start') || undefined}
+          initialEnd={readTitle(searchParams, 'end') || undefined}
           language={language}
           onLanguageChange={setLanguage}
           user={user}
@@ -450,8 +450,8 @@ export default function App() {
     
     // Game route
     if (pathname === '/game') {
-      const startArticle = searchParams.get('start') || '';
-      const endArticle = searchParams.get('end') || '';
+      const startArticle = readTitle(searchParams, 'start');
+      const endArticle = readTitle(searchParams, 'end');
       const partyUid = searchParams.get('party') || undefined;
       if (gameKey !== null && gameKey !== checkedGame) {
         return <div className="bg-black size-full" />; // checking the link's articles

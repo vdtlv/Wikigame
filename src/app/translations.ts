@@ -40,6 +40,9 @@ export const translations = {
     share: 'Share',
     linkCopied: 'Link copied',
     shareText: 'Try to win in WikiRunner',
+    shareFrom: 'from',
+    shareTo: 'to',
+    shareBeat: 'try to beat at',
     youWon: 'You Won!',
     
     // Language names
@@ -85,6 +88,9 @@ export const translations = {
     share: 'Поделиться',
     linkCopied: 'Ссылка скопирована',
     shareText: 'Попробуй выиграть в WikiRunner',
+    shareFrom: 'из',
+    shareTo: 'в',
+    shareBeat: 'попробуй обогнать на',
     youWon: 'Вы выиграли!',
     
     // Language names
@@ -104,6 +110,14 @@ const CLICK_FORMS: Record<Language, Record<string, string>> = {
 
 export const clicksLabel = (language: Language, n: number) =>
   `${n} ${CLICK_FORMS[language][new Intl.PluralRules(language).select(n)]}`;
+
+const POINT_FORMS: Record<Language, Record<string, string>> = {
+  en: { one: 'point', other: 'points' },
+  ru: { one: 'очко', few: 'очка', many: 'очков', other: 'очка' },
+};
+
+export const pointsLabel = (language: Language, n: number) =>
+  `${n} ${POINT_FORMS[language][new Intl.PluralRules(language).select(n)]}`;
 
 export const POPULAR_ARTICLES = {
   en: [
